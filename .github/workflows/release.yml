@@ -56,11 +56,21 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare Electron runtime
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath 'node_modules\electron\dist\electron.exe')) {
+            node node_modules\electron\install.js
+          }
+          if (-not (Test-Path -LiteralPath 'node_modules\electron\dist\electron.exe')) {
+            throw 'Electron runtime download did not produce electron.exe.'
+          }
+
       - name: Run core test suite
         run: pnpm test
 
       - name: Build portable and extract-once packages
-        run: pnpm run dist
+        run: pnpm run dist -- --publish never
 
       - name: Create checksums
         shell: pwsh
