@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <title>DSH Manager</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- ======== 左侧菜单栏 ======== -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo" title="DeepSeek Harness"><img src="logo.svg" alt="DSH" /></div>
+        <div class="brand-text">
+          <h1>DSH Manager</h1>
+          <span class="sub">DeepSeek Harness 管理器</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-tab="overview" title="概览">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+          <span class="nav-label">概览</span>
+        </button>
+        <button class="nav-item" data-tab="update" title="版本更新">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+          <span class="nav-label">版本更新</span>
+        </button>
+        <button class="nav-item" data-tab="settings" title="设置">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span class="nav-label">设置</span>
+        </button>
+        <button class="nav-item" data-tab="stats" title="Token 统计">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
+          <span class="nav-label">Token 统计</span>
+        </button>
+        <button class="nav-item" data-tab="plugins" title="插件">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a2 2 0 0 0-2-2h-1V7a4 4 0 0 0-8 0v2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2z"/><path d="M12 14v4"/></svg>
+          <span class="nav-label">插件</span>
+        </button>
+        <button class="nav-item" data-tab="logs" title="运行日志">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          <span class="nav-label">运行日志</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="mini-status" title="Harness 运行状态">
+          <span id="miniDot" class="dot gray"></span>
+          <span id="miniStatus">检测中…</span>
+        </div>
+        <div class="sidebar-actions">
+          <button id="btnTheme" class="btn ghost small theme-toggle" type="button" aria-pressed="false" title="切换到深色模式">
+            <svg class="theme-icon sun" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/></svg>
+            <svg class="theme-icon moon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 15.3A8.5 8.5 0 0 1 8.7 3.5 8.5 8.5 0 1 0 20.5 15.3z"/></svg>
+            <span id="themeLabel">深色模式</span>
+          </button>
+          <button id="btnQuit" class="btn ghost small" title="退出管理器（不影响 Harness 运行）">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5"/><path d="M14 8l4 4-4 4M18 12H8"/></svg>
+            <span class="quit-label">退出</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ======== 右侧内容区 ======== -->
+    <main class="content">
+
+      <!-- 概览 -->
+      <section id="tab-overview" class="tab-panel active">
+        <div class="page-head">
+          <h2>概览</h2>
+          <p>Harness 运行状态与常用操作</p>
+        </div>
+
+        <!-- 环境与部署（始终展示：部署状态 + 环境检查 + 部署/重新部署入口） -->
+        <section id="envPanel" class="card env-card">
+          <div class="env-head">
+            <div class="env-title">环境与部署</div>
+            <div class="env-tools">
+              <button id="btnEnvCheck" class="btn small ghost" title="立即重新检测 Git / Node.js / pnpm">↻ 环境检查</button>
+              <button id="btnRedeploy" class="btn small danger ghost" title="停止服务并重新克隆部署" hidden>重新部署</button>
+            </div>
+          </div>
+          <div class="env-row"><label>部署状态</label><span id="envDeployState" class="env-val">—</span></div>
+          <div class="env-row"><label>部署目录</label><code id="envPath" class="env-val">—</code></div>
+          <div class="prereq">
+            <span id="prereqGit" class="chip">Git —</span>
+            <span id="prereqNode" class="chip">Node.js —</span>
+            <span id="prereqPnpm" class="chip">pnpm —</span>
+          </div>
+          <div id="envWarn" class="env-warn hidden"></div>
+          <div class="deploy-actions">
+            <button id="btnDeploy" class="btn primary big" hidden>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+              一键下载并部署
+            </button>
+          </div>
+        </section>
+
+        <div class="card hero-card" id="heroCard">
+          <div class="status-left">
+            <div id="statusPill" class="pill gray"><span class="dot"></span><span id="statusText">检测中…</span></div>
+            <div class="meta">
+              <span>版本 <b id="verText">—</b> <code id="headText">—</code></span>
+              <span class="sep">·</span>
+              <span>端口 <b id="portText">—</b></span>
+            </div>
+            <div class="meta">
+              <span>目录 <code id="pathText" class="path">—</code></span>
+            </div>
+          </div>
+        </div>
+        <div class="card action-card" id="actionCard">
+          <button id="btnStart" class="btn primary big">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            启动
+          </button>
+          <button id="btnStop" class="btn danger big" disabled>
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+            停止
+          </button>
+          <button id="btnOpen" class="btn ghost">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9S14.5 18.4 12 21c-2.5-2.6-3.9-5.7-3.9-9S9.5 5.6 12 3z"/></svg>
+            打开网页
+          </button>
+        </div>
+      </section>
+
+      <!-- 版本更新 -->
+      <section id="tab-update" class="tab-panel">
+        <div class="page-head">
+          <h2>版本更新</h2>
+          <p>从 GitHub 拉取最新代码，依赖变化时自动安装</p>
+        </div>
+        <div class="card">
+          <div class="u-grid">
+            <div class="u-row"><label>当前版本</label><span id="curVerText" class="u-val">—</span></div>
+            <div class="u-row"><label>当前提交</label><code id="curHeadText" class="u-val">—</code></div>
+            <div class="u-row"><label>服务端口</label><span id="curPortText" class="u-val">—</span></div>
+          </div>
+          <div class="update-actions">
+            <button id="btnCheck" class="btn">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              检查更新
+            </button>
+            <button id="btnUpdate" class="btn accent" disabled>
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+              立即更新
+            </button>
+          </div>
+          <div id="updateHint" class="hint">点击「检查更新」查看是否有新版本</div>
+          <p class="note">更新流程：git pull --ff-only → （若 lockfile 变化）pnpm install --frozen-lockfile → 若服务运行中自动重启。</p>
+        </div>
+      </section>
+
+      <!-- 设置 -->
+      <section id="tab-settings" class="tab-panel">
+        <div class="page-head">
+          <h2>设置</h2>
+          <p>配置 Harness 安装目录与启动行为</p>
+        </div>
+        <div class="card">
+          <div class="row">
+            <label class="field-label">Harness 目录</label>
+            <input id="pathInput" class="input" type="text" spellcheck="false" placeholder="例如 D:\Programe\deepseek-harness" />
+            <button id="btnSavePath" class="btn small">保存</button>
+            <button id="btnOpenDir" class="btn small ghost">打开文件夹</button>
+          </div>
+          <div class="row">
+            <label class="field-label">下载镜像（可选）</label>
+            <input id="mirrorInput" class="input" type="text" spellcheck="false" placeholder="https://ghfast.top/https://github.com/deepseek-ai/deepseek-harness.git" />
+            <button id="btnSaveMirror" class="btn small">保存</button>
+          </div>
+          <p class="note">首次部署必须联网。若 GitHub 下载失败，会自动切换到上方镜像重试（npm 依赖失败则自动用国内镜像）；镜像地址可自定义。</p>
+          <label class="check"><input id="chkOpen" type="checkbox" checked /> 启动成功后自动打开网页</label>
+          <p class="note" style="margin-top:10px;">「概览」页的环境与部署面板会持续显示部署状态与环境检查结果（Git / Node.js / pnpm），缺少工具时启动会提前给出明确提示。</p>
+        </div>
+
+        <!-- API 绑定 -->
+        <div class="card">
+          <div class="api-head">
+            <span class="api-title">API 绑定</span>
+            <span id="apiBound" class="chip">未绑定</span>
+            <span class="api-path" id="apiPathText">—</span>
+          </div>
+          <div class="row">
+            <label class="field-label">服务商</label>
+            <select id="apiProvider" class="select">
+              <option value="deepseek">DeepSeek（默认）</option>
+              <option value="custom">自定义（OpenAI 兼容）</option>
+            </select>
+          </div>
+          <div class="row">
+            <label class="field-label">Base URL</label>
+            <input id="apiBaseUrl" class="input" type="text" spellcheck="false" placeholder="https://api.deepseek.com" />
+          </div>
+          <div class="row">
+            <label class="field-label">API Key</label>
+            <input id="apiKey" class="input" type="password" spellcheck="false" placeholder="sk-…" autocomplete="off" />
+            <button id="btnKeyToggle" class="btn small ghost" title="显示/隐藏">👁</button>
+          </div>
+          <div class="row">
+            <label class="field-label">管理平台</label>
+            <input id="apiPlatformUrl" class="input" type="text" spellcheck="false" placeholder="https://platform.deepseek.com/api_keys" />
+            <button id="btnOpenPlatform" class="btn small">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9S14.5 18.4 12 21c-2.5-2.6-3.9-5.7-3.9-9S9.5 5.6 12 3z"/></svg>
+              打开平台
+            </button>
+          </div>
+          <div class="api-actions">
+            <button id="btnSaveApi" class="btn primary">保存 API</button>
+            <span id="apiHint" class="hint">API Key 将写入 ~/.dsh（Harness 官方配置，运行中即刻生效）</span>
+          </div>
+        </div>
+
+        <div class="card about">
+          <p><b>DSH Manager</b> · v1.0.0 · 基于 Electron</p>
+          <p>DeepSeek Harness 图形化管理器：一键启动 / 停止 / 版本更新。</p>
+          <p class="dim">更新功能作用于 Harness 源码仓库；管理器自身不自动更新。</p>
+        </div>
+      </section>
+
+      <!-- Token 统计 -->
+      <section id="tab-stats" class="tab-panel">
+        <div class="page-head logs-head">
+          <div>
+            <h2>Token 统计</h2>
+            <p>基于会话日志聚合的用量与计费估算</p>
+          </div>
+          <div class="log-tools">
+            <button id="btnStatsRefresh" class="btn small">↻ 刷新</button>
+          </div>
+        </div>
+
+        <div class="stats-overview">
+          <div class="card stat-card"><div class="stat-num" id="stTotalTokens">—</div><div class="stat-label">总 Token</div></div>
+          <div class="card stat-card"><div class="stat-num" id="stHitRate">—</div><div class="stat-label">缓存命中率</div></div>
+          <div class="card stat-card"><div class="stat-num" id="stCost">—</div><div class="stat-label">计费估算 (USD)</div></div>
+          <div class="card stat-card"><div class="stat-num" id="stLlmCalls">—</div><div class="stat-label">LLM 调用</div></div>
+        </div>
+
+        <div class="card">
+          <div class="stats-sub">Token 构成</div>
+          <div class="token-bar" id="tokenBar"></div>
+          <div class="token-legend" id="tokenLegend"></div>
+        </div>
+
+        <div class="card">
+          <div class="stats-sub">用量明细</div>
+          <div class="stats-grid" id="statsGrid"></div>
+        </div>
+
+        <div class="card">
+          <div class="stats-sub">按模型</div>
+          <div class="table-scroll">
+            <table class="model-table" id="modelTable">
+              <thead><tr><th>模型</th><th>调用</th><th>输入</th><th>缓存读</th><th>缓存写</th><th>输出+推理</th><th>合计</th><th>费用 (USD)</th></tr></thead>
+              <tbody id="modelTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <p class="note" id="statsNote">—</p>
+      </section>
+
+      <!-- 插件管理 -->
+      <section id="tab-plugins" class="tab-panel">
+        <div class="page-head logs-head">
+          <div>
+            <h2>插件管理</h2>
+            <p>本地插件查看与卸载，在线安装新插件（官方 dsh plugin 机制）</p>
+          </div>
+          <div class="log-tools">
+            <button id="btnPluginsRefresh" class="btn small">↻ 刷新</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="stats-sub">在线安装</div>
+          <div class="row">
+            <label class="field-label">包名 / spec</label>
+            <input id="pluginSpec" class="input" type="text" spellcheck="false" placeholder="例如 @deepseek-ai/dsh-xxx 或任意 npm 包名" />
+            <button id="btnPluginInstall" class="btn primary">安装</button>
+          </div>
+          <p class="note">支持 npm 包名、git 地址等 pnpm 可解析的 spec。安装/卸载后需重启 Harness 生效；安装日志见「运行日志」。</p>
+        </div>
+
+        <div class="card">
+          <div class="stats-sub">已安装插件 <span id="pluginCount" class="count-pill">0</span></div>
+          <div id="pluginList" class="plugin-list"></div>
+        </div>
+
+        <p class="note" id="pluginNote">—</p>
+      </section>
+
+      <!-- 运行日志 -->
+      <section id="tab-logs" class="tab-panel">
+        <div class="page-head logs-head">
+          <div>
+            <h2>运行日志</h2>
+            <p>启动 / 停止 / 更新过程的实时输出</p>
+          </div>
+          <div class="log-tools">
+            <label class="check small"><input id="chkAutoScroll" type="checkbox" checked /> 自动滚动</label>
+            <button id="btnClear" class="btn small ghost">清空</button>
+          </div>
+        </div>
+        <div id="log" class="log"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="renderer.js"></script>
+</body>
+</html>

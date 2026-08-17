@@ -1,0 +1,14 @@
+node_modules/
+dist/
+win-unpacked/
+
+# electron-builder generated metadata and ad-hoc build logs
+builder-debug.yml
+builder-effective-config.yaml
+build-*.txt
+
+# Local UI captures
+ui-preview*.png
+
+# Local runtime data
+*.log

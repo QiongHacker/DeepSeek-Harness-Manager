@@ -1,0 +1,61 @@
+{
+  "name": "dsh-manager",
+  "productName": "DSH Manager",
+  "version": "1.0.0",
+  "description": "DeepSeek Harness 图形化管理器 —— 一键启动 / 停止 / 版本更新",
+  "main": "main.js",
+  "author": "QiongHacker",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/QiongHacker/DeepSeek-Harness-Manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/QiongHacker/DeepSeek-Harness-Manager/issues"
+  },
+  "homepage": "https://github.com/QiongHacker/DeepSeek-Harness-Manager#readme",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node core/service.test.js",
+    "icon": "electron scripts/render-icon.js && node scripts/make-ico.mjs",
+    "dist": "electron-builder --win portable --x64",
+    "pack": "electron-builder --win dir --x64"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.dsh.manager",
+    "productName": "DSH Manager",
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**",
+      "core/service.js",
+      "core/stats.js",
+      "core/stats-worker.js",
+      "build/icon.ico"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "DSH-Manager-${version}-portable.${ext}"
+    }
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  }
+}
