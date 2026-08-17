@@ -82,6 +82,11 @@
 ```text
 DeepSeek-Harness-Manager/
 ├─ .gitattributes               跨平台文本规范
+├─ .github/
+│  ├─ release-notes/
+│  │  └─ v1.0.0.md             首个版本的中英文发布说明
+│  └─ workflows/
+│     └─ release.yml           Windows 验证、构建与发布自动化
 ├─ .gitignore                   构建与运行文件忽略规则
 ├─ build/
 │  ├─ icon.ico                 Windows 应用图标

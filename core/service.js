@@ -567,6 +567,9 @@ class Service extends EventEmitter {
       await execCapture('taskkill', ['/PID', String(pid), '/T', '/F']);
     } catch (e) {
       this._log('warn', `taskkill ${pid}: ${String(e.stderr || e.message).trim()}`);
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch { /* the process may already have exited */ }
     }
   }
 
@@ -656,6 +659,11 @@ class Service extends EventEmitter {
       this._log('info', this._m(`正在停止 Harness（PID ${this.child.pid}）…`, `Stopping Harness (PID ${this.child.pid})…`));
       await this._killTree(this.child.pid);
       this.child = null;
+      // pnpm/cmd wrappers can exit before their Node listener. Sweep the port
+      // once more so the service does not leave an orphan process behind.
+      await sleep(300);
+      const remainingPids = await this._findListenerPids(this.config.port);
+      for (const pid of remainingPids) await this._killChain(pid);
     } else if (pids.length) {
       this._log('info', this._m(
         `检测到外部实例占用端口 ${this.config.port}（PID: ${pids.join(', ')}），正在终止…`,

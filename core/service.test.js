@@ -5,6 +5,7 @@
 
 const { execFileSync } = require('child_process');
 const fs = require('fs');
+const net = require('net');
 const os = require('os');
 const path = require('path');
 const { Service } = require('./service');
@@ -15,13 +16,46 @@ function sh(cmd, args, opts = {}) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+const allocatedPorts = new Set();
+async function allocatePort() {
+  for (;;) {
+    const port = await new Promise((resolve, reject) => {
+      const server = net.createServer();
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        const selected = server.address().port;
+        server.close(error => error ? reject(error) : resolve(selected));
+      });
+    });
+    if (!allocatedPorts.has(port)) {
+      allocatedPorts.add(port);
+      return port;
+    }
+  }
+}
+
+async function removeTestDirectory(base) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      fs.rmSync(base, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      return;
+    } catch (error) {
+      if (!['EBUSY', 'ENOTEMPTY', 'EPERM'].includes(error.code) || attempt === 9) throw error;
+      await sleep(250);
+    }
+  }
+}
+
 async function main() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'dshmgr-test-'));
   const checkout = path.join(base, 'harness');
   const remote = path.join(base, 'remote.git');
   const tmp2 = path.join(base, 'remote-wk');
   const configPath = path.join(base, 'config.json');
-  const PORT = 34777;
+  const PORT = await allocatePort();
+  const DEPLOY_PORT = await allocatePort();
+  const MIRROR_PORT = await allocatePort();
+  const I18N_PORT = await allocatePort();
 
   console.log('[setup] 创建临时 git 仓库与假服务…');
   sh('git', ['init', '--bare', '-q', remote]);
@@ -38,7 +72,7 @@ async function main() {
   sh('git', ['push', '-q', '-u', 'origin', 'HEAD:master'], { cwd: checkout });
 
   const svc = new Service({ configPath });
-  svc.setConfig({ checkout, port: PORT, startCommand: ['cmd', '/c', 'node', 'server.js'] });
+  svc.setConfig({ checkout, port: PORT, startCommand: [process.execPath, 'server.js'] });
   svc.on('log', e => console.log(`  [${e.level}] ${e.line}`));
   const results = {};
 
@@ -91,7 +125,7 @@ async function main() {
   const deployTarget = path.join(base, 'deploy-target');
   const svc2 = new Service({ configPath: path.join(base, 'config2.json') });
   svc2.on('log', e => console.log(`  [d${e.level}] ${e.line}`));
-  svc2.setConfig({ checkout: deployTarget, port: PORT + 1, deployUrl: remote });
+  svc2.setConfig({ checkout: deployTarget, port: DEPLOY_PORT, deployUrl: remote });
   const rDeploy = await svc2.deploy();
   results.deploy = { ok: rDeploy.ok, reason: rDeploy.reason };
   results.deployCheckout = svc2.checkoutExists();
@@ -217,7 +251,7 @@ async function main() {
   const svc8 = new Service({ configPath: path.join(base, 'config8.json') });
   svc8.on('log', e => { if (e.level !== 'info') console.log(`  [m${e.level}] ${e.line}`); });
   svc8.setConfig({
-    checkout: mirrorTarget, port: PORT + 3,
+    checkout: mirrorTarget, port: MIRROR_PORT,
     deployUrl: path.join(base, 'nonexistent-remote.git'), // 主源必定失败
     deployMirrorUrl: remote                            // 镜像 = 本地有效仓库
   });
@@ -228,7 +262,7 @@ async function main() {
   // 10) 英文日志（语言配置应作用于服务层输出）
   console.log('[test] 中英文切换…');
   const svc9 = new Service({ configPath: path.join(base, 'config9.json') });
-  svc9.setConfig({ language: 'en-US', port: PORT + 9 });
+  svc9.setConfig({ language: 'en-US', port: I18N_PORT });
   const englishLogs = [];
   svc9.on('log', e => englishLogs.push(e.line));
   await svc9.stop();
@@ -238,7 +272,7 @@ async function main() {
 
   // 清理
   await svc.stop();
-  fs.rmSync(base, { recursive: true, force: true });
+  await removeTestDirectory(base);
 
   console.log('RESULT ' + JSON.stringify(results));
   const pass = results.bindExisting && results.bindRejectsInvalid &&

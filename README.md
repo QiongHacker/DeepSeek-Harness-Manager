@@ -82,6 +82,11 @@ The source repository intentionally does **not** contain generated packages. `di
 ```text
 DeepSeek-Harness-Manager/
 ├─ .gitattributes               Cross-platform text normalization
+├─ .github/
+│  ├─ release-notes/
+│  │  └─ v1.0.0.md             Bilingual notes for the first release
+│  └─ workflows/
+│     └─ release.yml           Windows validation, build and release automation
 ├─ .gitignore                   Generated/runtime file exclusions
 ├─ build/
 │  ├─ icon.ico                 Windows application icon
