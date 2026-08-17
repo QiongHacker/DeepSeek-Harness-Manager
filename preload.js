@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('dsh', {
   stop: () => ipcRenderer.invoke('service:stop'),
   deploy: opts => ipcRenderer.invoke('deploy:run', opts || {}),
   checkDeploy: () => ipcRenderer.invoke('deploy:check'),
+  bindCheckout: checkout => ipcRenderer.invoke('checkout:bind', checkout),
+  chooseCheckout: () => ipcRenderer.invoke('checkout:choose'),
   getApiBinding: () => ipcRenderer.invoke('api:get'),
   saveApiBinding: opts => ipcRenderer.invoke('api:save', opts || {}),
   getStats: opts => ipcRenderer.invoke('stats:get', opts || {}),

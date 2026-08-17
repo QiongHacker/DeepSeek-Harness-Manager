@@ -2,7 +2,7 @@
   "name": "dsh-manager",
   "productName": "DSH Manager",
   "version": "1.0.0",
-  "description": "DeepSeek Harness 图形化管理器 —— 一键启动 / 停止 / 版本更新",
+  "description": "A modern Windows manager for deploying, binding, starting, stopping, and updating DeepSeek Harness",
   "main": "main.js",
   "author": "QiongHacker",
   "license": "MIT",
@@ -19,7 +19,9 @@
     "start": "electron .",
     "test": "node core/service.test.js",
     "icon": "electron scripts/render-icon.js && node scripts/make-ico.mjs",
-    "dist": "electron-builder --win portable --x64",
+    "dist": "electron-builder --win --x64",
+    "dist:portable": "electron-builder --win portable --x64",
+    "dist:zip": "electron-builder --win zip --x64",
     "pack": "electron-builder --win dir --x64"
   },
   "devDependencies": {
@@ -42,6 +44,10 @@
       "core/stats-worker.js",
       "build/icon.ico"
     ],
+    "artifactName": "DSH-Manager-${version}-windows-x64.${ext}",
+    "portable": {
+      "artifactName": "DSH-Manager-${version}-portable.${ext}"
+    },
     "win": {
       "icon": "build/icon.ico",
       "target": [
@@ -50,9 +56,14 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
         }
-      ],
-      "artifactName": "DSH-Manager-${version}-portable.${ext}"
+      ]
     }
   },
   "dependencies": {

@@ -29,7 +29,7 @@ async function main() {
   sh('git', ['init', '-q'], { cwd: checkout });
   sh('git', ['config', 'user.email', 't@t'], { cwd: checkout });
   sh('git', ['config', 'user.name', 't'], { cwd: checkout });
-  fs.writeFileSync(path.join(checkout, 'package.json'), JSON.stringify({ name: 'fake', version: '1.0.0' }));
+  fs.writeFileSync(path.join(checkout, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-root', version: '1.0.0', scripts: { dsh: 'node server.js' } }));
   fs.writeFileSync(path.join(checkout, 'server.js'),
     `require('http').createServer((q,s)=>s.end('ok')).listen(${PORT},'127.0.0.1'); setInterval(()=>{},1000);`);
   sh('git', ['add', '-A'], { cwd: checkout });
@@ -41,6 +41,16 @@ async function main() {
   svc.setConfig({ checkout, port: PORT, startCommand: ['cmd', '/c', 'node', 'server.js'] });
   svc.on('log', e => console.log(`  [${e.level}] ${e.line}`));
   const results = {};
+
+  // 已有 Harness 目录：识别、绑定并读取版本 / Git 信息；普通 Node 项目必须拒绝
+  const bindSvc = new Service({ configPath: path.join(base, 'bind-config.json') });
+  const rBind = await bindSvc.bindCheckout(checkout);
+  const invalidCheckout = path.join(base, 'not-harness');
+  fs.mkdirSync(invalidCheckout);
+  fs.writeFileSync(path.join(invalidCheckout, 'package.json'), JSON.stringify({ name: 'ordinary-app', version: '1.0.0' }));
+  const rBindInvalid = await bindSvc.bindCheckout(invalidCheckout);
+  results.bindExisting = rBind.ok && rBind.path === fs.realpathSync(checkout) && rBind.version === '1.0.0' && rBind.gitOk;
+  results.bindRejectsInvalid = !rBindInvalid.ok && rBindInvalid.reason === 'not-harness' && bindSvc.config.checkout === fs.realpathSync(checkout);
 
   // 1) 启动
   console.log('[test] 启动…');
@@ -55,7 +65,7 @@ async function main() {
   sh('git', ['clone', '-q', remote, tmp2]);
   sh('git', ['config', 'user.email', 't@t'], { cwd: tmp2 });
   sh('git', ['config', 'user.name', 't'], { cwd: tmp2 });
-  fs.writeFileSync(path.join(tmp2, 'package.json'), JSON.stringify({ name: 'fake', version: '2.0.0' }));
+  fs.writeFileSync(path.join(tmp2, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-root', version: '2.0.0', scripts: { dsh: 'node server.js' } }));
   sh('git', ['add', '-A'], { cwd: tmp2 });
   sh('git', ['commit', '-q', '-m', 'v2'], { cwd: tmp2 });
   sh('git', ['push', '-q', 'origin', 'HEAD:master'], { cwd: tmp2 });
@@ -215,12 +225,24 @@ async function main() {
   results.mirrorFallback = { ok: rMirror.ok, reason: rMirror.reason, deployed: svc8.checkoutExists() };
   results.mirrorOk = rMirror.ok && svc8.checkoutExists();
 
+  // 10) 英文日志（语言配置应作用于服务层输出）
+  console.log('[test] 中英文切换…');
+  const svc9 = new Service({ configPath: path.join(base, 'config9.json') });
+  svc9.setConfig({ language: 'en-US', port: PORT + 9 });
+  const englishLogs = [];
+  svc9.on('log', e => englishLogs.push(e.line));
+  await svc9.stop();
+  results.i18n = svc9.config.language === 'en-US' &&
+    englishLogs.includes('No running Harness instance was detected.') &&
+    englishLogs.includes('Harness stopped.');
+
   // 清理
   await svc.stop();
   fs.rmSync(base, { recursive: true, force: true });
 
   console.log('RESULT ' + JSON.stringify(results));
-  const pass = results.start.ok && !results.start.already && results.statusRunning &&
+  const pass = results.bindExisting && results.bindRejectsInvalid &&
+    results.start.ok && !results.start.already && results.statusRunning &&
     results.checkUpdate.ok && results.checkUpdate.behind === 1 && results.checkUpdate.ahead === 0 &&
     results.stop.ok && results.portFree && results.update.ok && results.versionApplied &&
     results.deploy.ok && results.deployCheckout && results.deployNpmrc &&
@@ -230,7 +252,7 @@ async function main() {
     results.apiSettings && results.apiCredentials && results.apiRead && !results.apiBefore.bound &&
     results.statsOk && results.hitRateOk && results.statsCostOk && results.statsCache &&
     results.pluginsOk && results.pluginsUninit &&
-    results.mirrorOk;
+    results.mirrorOk && results.i18n;
   console.log(pass ? 'ALL PASS ✅' : 'TEST FAILED ❌');
   process.exit(pass ? 0 : 1);
 }

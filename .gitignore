@@ -9,6 +9,8 @@ build-*.txt
 
 # Local UI captures
 ui-preview*.png
+*-smoke.json
+.preview-*/
 
 # Local runtime data
 *.log

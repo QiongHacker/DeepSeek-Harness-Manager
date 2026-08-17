@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Service, DEFAULT_URL } = require('./core/service');
@@ -36,7 +36,7 @@ if (!gotLock) {
       minWidth,
       minHeight,
       title: 'DSH Manager',
-      backgroundColor: '#f3f3f3',
+      backgroundColor: '#f5f7fc',
       icon: path.join(__dirname, 'build', 'icon.ico'),
       show: false,
       autoHideMenuBar: true,
@@ -48,8 +48,27 @@ if (!gotLock) {
       }
     });
     win.setMenuBarVisibility(false);
+    if (process.argv.includes('--startup-probe')) {
+      win.webContents.once('did-finish-load', () => {
+        setTimeout(() => {
+          app.exit(0);
+        }, 150);
+      });
+    }
     win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-    if (!process.argv.includes('--smoke')) win.show();
+    const previewLanguage = argValue('--language');
+    if (previewLanguage === 'zh-CN' || previewLanguage === 'en-US') {
+      win.webContents.once('did-finish-load', () => {
+        setTimeout(() => win.webContents.executeJavaScript(`window.applyLanguage?.(${JSON.stringify(previewLanguage)})`), 250);
+      });
+    }
+    const previewTheme = argValue('--theme');
+    if (previewTheme === 'light' || previewTheme === 'dark') {
+      win.webContents.once('did-finish-load', () => {
+        setTimeout(() => win.webContents.executeJavaScript(`window.applyTheme?.(${JSON.stringify(previewTheme)})`), 250);
+      });
+    }
+    if (!process.argv.includes('--smoke') && !process.argv.includes('--startup-probe')) win.show();
   }
 
   // ---------- IPC ----------
@@ -57,7 +76,17 @@ if (!gotLock) {
   ipcMain.handle('service:start', () => svc.start());
   ipcMain.handle('service:stop', () => svc.stop());
   ipcMain.handle('deploy:run', (_e, opts) => svc.deploy(opts || {}));
-  ipcMain.handle('deploy:check', () => svc.checkDeploy());
+  ipcMain.handle('deploy:check', () => svc.checkDeploy({ force: true }));
+  ipcMain.handle('checkout:bind', (_e, checkout) => svc.bindCheckout(checkout));
+  ipcMain.handle('checkout:choose', async () => {
+    const result = await dialog.showOpenDialog(win, {
+      title: svc.config.language === 'en-US' ? 'Select an existing DeepSeek Harness folder' : '选择已有 DeepSeek Harness 目录',
+      defaultPath: fs.existsSync(svc.config.checkout) ? svc.config.checkout : path.dirname(svc.config.checkout),
+      properties: ['openDirectory']
+    });
+    if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true, reason: 'canceled' };
+    return svc.bindCheckout(result.filePaths[0]);
+  });
   ipcMain.handle('api:get', () => svc.getApiBinding());
   ipcMain.handle('api:save', (_e, opts) => svc.saveApiBinding(opts || {}));
   ipcMain.handle('stats:get', (_e, opts) => svc.getStats(opts || {}));
@@ -128,6 +157,15 @@ if (!gotLock) {
               button?.click();
               return { button: !!button, before, after, restored: document.documentElement.dataset.theme === before };
             })(),
+            language: (() => {
+              const button = document.querySelector('#btnLanguage');
+              const before = document.documentElement.lang;
+              button?.click();
+              const after = document.documentElement.lang;
+              const translatedTitle = document.querySelector('#tab-overview h2')?.textContent;
+              button?.click();
+              return { button: !!button, before, after, translatedTitle, restored: document.documentElement.lang === before };
+            })(),
             responsive: (() => {
               const sidebar = document.querySelector('.sidebar').getBoundingClientRect();
               const indicator = document.querySelector('.mini-status').getBoundingClientRect();
@@ -139,6 +177,8 @@ if (!gotLock) {
               };
             })(),
             envPanel: !!document.querySelector('#envPanel'),
+            bindExisting: !!document.querySelector('#btnBindExisting'),
+            chooseCheckout: !!document.querySelector('#btnChoosePath'),
             statsTab: !!document.querySelector('#tab-stats'),
             statsNav: document.querySelectorAll('.nav-item[data-tab="stats"]').length,
             envState: document.querySelector('#envDeployState')?.textContent,
