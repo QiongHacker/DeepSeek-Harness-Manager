@@ -18,8 +18,8 @@ Download both builds from the [latest GitHub Release](https://github.com/QiongHa
 
 | Package | Recommended for | Usage |
 | --- | --- | --- |
-| `DSH-Manager-1.0.0-windows-x64.zip` | **Recommended. Faster startup.** | Extract once, then run `DSH Manager.exe` from the extracted folder. Keep all extracted files together. |
-| `DSH-Manager-1.0.0-portable.exe` | Single-file portability | Run the EXE directly. It needs no installation, but starts more slowly because the embedded Electron runtime is extracted to a temporary folder on every launch. |
+| `DSH-Manager-1.1.0-windows-x64.zip` | **Recommended. Faster startup.** | Extract once, then run `DSH Manager.exe` from the extracted folder. Keep all extracted files together. |
+| `DSH-Manager-1.1.0-portable.exe` | Single-file portability | Run the EXE directly. It needs no installation, but starts more slowly because the embedded Electron runtime is extracted to a temporary folder on every launch. |
 
 The application is currently unsigned. Windows SmartScreen may show a warning on first launch; verify the release checksum before choosing **Run anyway**.
 
@@ -32,8 +32,8 @@ The application is currently unsigned. Windows SmartScreen may show a warning on
 | Process management | Start `pnpm dsh web`, detect an already-running instance on port `3080`, stop manager-owned or confirmed external instances, and open the web UI. |
 | Version management | Read the package version and Git commit, discover the actual upstream branch, compare local/remote commits, fast-forward safely, reinstall changed dependencies, and restart when needed. |
 | API binding | Save a DeepSeek or OpenAI-compatible endpoint and API key to the official Harness files under `~/.dsh`. |
-| Token statistics | Aggregate plain and zstd-compressed session logs, including token categories, cache hit rate, model totals, and estimated cost. |
-| Plugin management | List installed plugins, install pnpm-compatible package/Git specs, and remove plugins for the selected profile. |
+| Token statistics | Incrementally aggregate plain and zstd-compressed session logs with live progress, monthly/daily/hourly usage bar charts, token categories, cache hit rate, model totals, and estimated cost. Unchanged history is reused from a persistent cache. |
+| Plugin management | List installed plugins, install validated pnpm-compatible package/Git specs, and remove plugins for the selected profile. Plugins are executable code, so install only reviewed sources you trust. |
 | Modern interface | DeepSeek-inspired light/dark themes, Chinese/English switching, persistent preferences, and a responsive layout down to `680 × 520`. |
 
 ## Requirements
@@ -63,15 +63,28 @@ To switch to another checkout, stop the currently managed Harness first, then us
 - Manager preferences are stored in Electron's per-user application data directory.
 - Harness settings and credentials are written to `~/.dsh/settings.yaml` and `~/.dsh/.credentials.yaml`.
 - Session statistics are read from `~/.dsh/sessions`.
+- Per-session usage summaries are cached beside the manager configuration; unchanged history is not reparsed on every refresh.
 - A manager-created deployment keeps `node_modules`, `.pnpm-store`, and its generated `.npmrc` inside the selected deployment directory.
 - Closing DSH Manager does not stop Harness; the service can continue running in the background.
 
 The default checkout path is `%USERPROFILE%\deepseek-harness`, but it can be replaced by binding any valid checkout in the interface or by setting `DSH_CHECKOUT`.
 
+## Security and API keys
+
+- The renderer runs on an allowlisted `app://` protocol with Chromium sandboxing, context isolation, no Node.js integration, a restrictive Content Security Policy, blocked navigation/windows/permissions, and an allowlisted preload bridge.
+- Every IPC request is accepted only from the manager's main local frame. External links and configurable endpoints are protocol-validated; persisted settings cannot override process commands or the official deployment source.
+- API keys are never returned to the renderer after saving. Only a suffix mask is shown, and known/token-shaped secrets are redacted from logs.
+- Manager preferences never store API keys. Harness compatibility currently requires the key in `~/.dsh/settings.yaml` and `~/.dsh/.credentials.yaml`; these per-user files are excluded from every build.
+- Release builds enable Electron fuses and ASAR integrity restrictions. CI audits dependencies, scans source and complete Git history, builds the packages, then extracts and scans the ZIP/portable EXE before publishing. The scanner detects common credential formats; when run on the development computer it also checks exact matches against locally configured keys without printing their value.
+
+Run the same checks locally with `pnpm run security:audit` and `pnpm audit --prod --audit-level high`.
+
+No desktop application can protect a plaintext Harness credential from malware or an administrator already running as the same Windows user. If the computer may be compromised, revoke the key in the DeepSeek platform and issue a new one. Third-party plugins and custom API endpoints are also trusted-code/network boundaries: a plugin can read Harness files, and an endpoint receives the supplied key.
+
 ## Network fallback
 
 - The primary source is `https://github.com/deepseek-ai/deepseek-harness.git`.
-- If cloning fails, the configured Git mirror is tried automatically.
+- No third-party Git mirror is enabled by default. If cloning fails, a user-configured HTTPS mirror is tried automatically.
 - If dependency installation fails, the manager retries with `https://registry.npmmirror.com`.
 - Update checks follow the bound repository's actual upstream branch instead of assuming `master` or `main`.
 
@@ -84,7 +97,8 @@ DeepSeek-Harness-Manager/
 ├─ .gitattributes               Cross-platform text normalization
 ├─ .github/
 │  ├─ release-notes/
-│  │  └─ v1.0.0.md             Bilingual notes for the first release
+│  │  ├─ v1.0.0.md             Bilingual notes for the first release
+│  │  └─ v1.1.0.md             Current bilingual release notes
 │  └─ workflows/
 │     └─ release.yml           Windows validation, build and release automation
 ├─ .gitignore                   Generated/runtime file exclusions
@@ -94,6 +108,7 @@ DeepSeek-Harness-Manager/
 ├─ core/
 │  ├─ service.js               Harness process, deployment, Git, API and plugin services
 │  ├─ service.test.js          End-to-end core tests with temporary repositories/services
+│  ├─ security.js              URL, IPC payload, config and secret-redaction policy
 │  ├─ stats.js                 Session aggregation and cost estimation
 │  └─ stats-worker.js          Background statistics worker
 ├─ renderer/
@@ -104,7 +119,9 @@ DeepSeek-Harness-Manager/
 ├─ scripts/
 │  ├─ make-ico.mjs             ICO generator
 │  ├─ make-icon.ps1            Icon helper for Windows
-│  └─ render-icon.js           Electron icon renderer
+│  ├─ after-pack.mjs           Strict Electron fuse policy applied before signing
+│  ├─ render-icon.js           Electron icon renderer
+│  └─ security-audit.js        Source/history/release credential scanner
 ├─ main.js                     Electron main process, IPC and diagnostic entry points
 ├─ preload.js                  Context-isolated renderer bridge
 ├─ package.json                Scripts, dependencies and dual Windows build config
@@ -119,8 +136,8 @@ Generated locally, but excluded from Git:
 
 ```text
 dist/
-├─ DSH-Manager-1.0.0-portable.exe
-├─ DSH-Manager-1.0.0-windows-x64.zip
+├─ DSH-Manager-1.1.0-portable.exe
+├─ DSH-Manager-1.1.0-windows-x64.zip
 └─ win-unpacked/               Temporary/full build directory
 ```
 
@@ -140,9 +157,10 @@ pnpm run dist:portable   # Build only the single-file portable EXE
 pnpm run dist:zip        # Build only the extract-once ZIP
 pnpm run pack            # Build the unpacked Windows directory
 pnpm run icon            # Regenerate icon.png and icon.ico
+pnpm run security:audit  # Scan source, Git history and extracted release artifacts
 ```
 
-`pnpm test` covers existing-checkout binding and rejection, start/stop, external port detection, upstream update checks, fast-forward updates, deployment/redeployment, mirror fallback, API persistence, token statistics, plugins, and service-layer localization. Electron smoke tests additionally check navigation, themes, language switching, responsive layout, and renderer errors.
+`pnpm test` covers security input policy, config/key isolation and log redaction in addition to existing-checkout binding and rejection, start/stop, external port detection, upstream update checks, fast-forward updates, deployment/redeployment, mirror fallback, API persistence, token statistics, plugins, and service-layer localization. Electron smoke tests additionally check navigation, themes, language switching, responsive layout, and renderer errors.
 
 ## Troubleshooting
 

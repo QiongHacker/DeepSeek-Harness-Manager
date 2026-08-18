@@ -18,8 +18,8 @@
 
 | 安装包 | 适合场景 | 使用方式 |
 | --- | --- | --- |
-| `DSH-Manager-1.0.0-windows-x64.zip` | **推荐，启动更快** | 只需解压一次，运行文件夹内的 `DSH Manager.exe`；请保留全部解压文件。 |
-| `DSH-Manager-1.0.0-portable.exe` | 方便携带的单文件版本 | 直接运行，无需安装；但每次启动都要把内置 Electron 运行时解压到临时目录，所以会更慢。 |
+| `DSH-Manager-1.1.0-windows-x64.zip` | **推荐，启动更快** | 只需解压一次，运行文件夹内的 `DSH Manager.exe`；请保留全部解压文件。 |
+| `DSH-Manager-1.1.0-portable.exe` | 方便携带的单文件版本 | 直接运行，无需安装；但每次启动都要把内置 Electron 运行时解压到临时目录，所以会更慢。 |
 
 应用目前没有代码签名。Windows SmartScreen 首次运行时可能提示风险；建议先核对 Release 校验值，再选择“仍要运行”。
 
@@ -32,8 +32,8 @@
 | 进程管理 | 执行 `pnpm dsh web`，检测端口 `3080` 上的已有实例，停止管理器启动或经确认的外部实例，并打开 Web 界面。 |
 | 版本管理 | 读取包版本与 Git 提交，识别实际上游分支，对比本地/远程提交，安全快进，依赖变化时重新安装并按需重启。 |
 | API 绑定 | 将 DeepSeek 或 OpenAI 兼容端点与 API Key 保存到 `~/.dsh` 官方配置。 |
-| Token 统计 | 汇总普通和 zstd 压缩的会话日志，展示分类 Token、缓存命中率、模型汇总与费用估算。 |
-| 插件管理 | 查看已安装插件，安装 pnpm 支持的 npm/Git spec，并卸载当前 profile 的插件。 |
+| Token 统计 | 增量汇总普通和 zstd 压缩的会话日志，实时显示进度、月/日/小时用量柱状图、分类 Token、缓存命中率、模型汇总与费用估算；未变化的历史记录直接复用持久化缓存。 |
+| 插件管理 | 查看已安装插件，安装经过格式校验的 npm/Git spec，并卸载当前 profile 的插件。插件属于可执行代码，只应安装已审查且可信的来源。 |
 | 现代界面 | DeepSeek 风格浅色/深色主题、中英文切换、偏好持久化，并自适应到 `680 × 520`。 |
 
 ## 系统要求
@@ -63,15 +63,28 @@
 - 管理器偏好保存在 Electron 的当前用户应用数据目录。
 - Harness 设置和凭据写入 `~/.dsh/settings.yaml` 与 `~/.dsh/.credentials.yaml`。
 - Token 统计读取 `~/.dsh/sessions`。
+- 每个会话的用量摘要会缓存在管理器配置旁；刷新时不会重复解析未变化的历史记录。
 - 管理器创建的部署会把 `node_modules`、`.pnpm-store` 和生成的 `.npmrc` 放在所选部署目录内。
 - 关闭 DSH Manager 不会停止 Harness，服务可继续在后台运行。
 
 默认仓库路径为 `%USERPROFILE%\deepseek-harness`，可在界面中绑定任意有效仓库来替换，也可通过 `DSH_CHECKOUT` 环境变量指定。
 
+## 安全与 API Key
+
+- 渲染进程通过资源白名单 `app://` 协议加载，启用了 Chromium 沙箱、上下文隔离并关闭 Node.js 集成；同时使用严格内容安全策略，禁止页面跳转、新窗口和权限请求，预加载桥接仅开放白名单接口。
+- 每个 IPC 请求都必须来自管理器本地页面的主 frame。外链和可配置端点会校验协议，持久化设置无法覆盖进程启动命令或官方部署源。
+- API Key 保存后不会返回给渲染进程，界面只显示末尾掩码；日志会按已知密钥和常见 Token 格式自动脱敏。
+- 管理器偏好配置从不保存 API Key。为了兼容 Harness，密钥目前仍需写入 `~/.dsh/settings.yaml` 与 `~/.dsh/.credentials.yaml`；这两个当前用户文件不会进入构建。
+- Release 构建启用 Electron Fuses 和 ASAR 完整性限制。CI 会审计依赖、扫描源码和完整 Git 历史，再构建并解包检查 ZIP/便携 EXE 后才允许发布。扫描器会识别常见凭据格式；在开发电脑本地运行时，还会在不打印密钥内容的前提下精确匹配本机已有 Key。
+
+本地可运行 `pnpm run security:audit` 和 `pnpm audit --prod --audit-level high` 执行同样检查。
+
+如果恶意程序或管理员已经以同一个 Windows 用户身份运行，任何桌面应用都无法保护 Harness 所需的明文凭据。怀疑电脑被入侵时，请立即到 DeepSeek 平台吊销旧 Key 并生成新 Key。第三方插件与自定义 API 端点同样属于信任边界：插件可以读取 Harness 文件，而 API 端点会接收到你填写的 Key。
+
 ## 网络回退
 
 - 默认源码为 `https://github.com/deepseek-ai/deepseek-harness.git`。
-- 克隆失败时自动尝试配置的 Git 镜像。
+- 默认不启用任何第三方 Git 镜像；只有用户明确配置 HTTPS 镜像后，克隆失败时才会回退使用。
 - 依赖安装失败时自动改用 `https://registry.npmmirror.com` 重试。
 - 更新检查会跟随绑定仓库的实际上游分支，不再假定必须是 `master` 或 `main`。
 
@@ -84,7 +97,8 @@ DeepSeek-Harness-Manager/
 ├─ .gitattributes               跨平台文本规范
 ├─ .github/
 │  ├─ release-notes/
-│  │  └─ v1.0.0.md             首个版本的中英文发布说明
+│  │  ├─ v1.0.0.md             首个版本的中英文发布说明
+│  │  └─ v1.1.0.md             当前版本的中英文发布说明
 │  └─ workflows/
 │     └─ release.yml           Windows 验证、构建与发布自动化
 ├─ .gitignore                   构建与运行文件忽略规则
@@ -94,6 +108,7 @@ DeepSeek-Harness-Manager/
 ├─ core/
 │  ├─ service.js               进程、部署、Git、API 与插件服务
 │  ├─ service.test.js          临时仓库/服务驱动的核心端到端测试
+│  ├─ security.js              URL、IPC 参数、配置与日志脱敏策略
 │  ├─ stats.js                 会话统计与费用估算
 │  └─ stats-worker.js          后台统计 Worker
 ├─ renderer/
@@ -104,7 +119,9 @@ DeepSeek-Harness-Manager/
 ├─ scripts/
 │  ├─ make-ico.mjs             ICO 生成脚本
 │  ├─ make-icon.ps1            Windows 图标辅助脚本
-│  └─ render-icon.js           Electron 图标渲染脚本
+│  ├─ after-pack.mjs           签名前应用严格 Electron Fuse 策略
+│  ├─ render-icon.js           Electron 图标渲染脚本
+│  └─ security-audit.js        源码、历史与 Release 凭据扫描器
 ├─ main.js                     Electron 主进程、IPC 与诊断入口
 ├─ preload.js                  隔离环境下的渲染进程桥接
 ├─ package.json                脚本、依赖与双 Windows 构建配置
@@ -119,8 +136,8 @@ DeepSeek-Harness-Manager/
 
 ```text
 dist/
-├─ DSH-Manager-1.0.0-portable.exe
-├─ DSH-Manager-1.0.0-windows-x64.zip
+├─ DSH-Manager-1.1.0-portable.exe
+├─ DSH-Manager-1.1.0-windows-x64.zip
 └─ win-unpacked/               临时/完整构建目录
 ```
 
@@ -140,9 +157,10 @@ pnpm run dist:portable   # 只构建单文件便携 EXE
 pnpm run dist:zip        # 只构建解压即用 ZIP
 pnpm run pack            # 构建未压缩的 Windows 目录
 pnpm run icon            # 重新生成 icon.png 与 icon.ico
+pnpm run security:audit  # 扫描源码、Git 历史与解包后的 Release 产物
 ```
 
-`pnpm test` 覆盖已有仓库绑定与错误目录拒绝、启动/停止、外部端口检测、上游更新检查、安全快进、部署/重新部署、镜像回退、API 持久化、Token 统计、插件以及服务层中英文日志。Electron 冒烟测试额外检查导航、主题、语言切换、响应式布局和渲染错误。
+`pnpm test` 除已有仓库绑定与错误目录拒绝、启动/停止、外部端口检测、上游更新检查、安全快进、部署/重新部署、镜像回退、API 持久化、Token 统计、插件及中英文日志外，还覆盖安全参数策略、配置/密钥隔离和日志脱敏。Electron 冒烟测试额外检查导航、主题、语言切换、响应式布局和渲染错误。
 
 ## 常见问题
 

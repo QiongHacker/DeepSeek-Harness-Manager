@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'" />
   <title>DSH Manager</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -206,7 +206,7 @@
           </div>
           <div class="row">
             <label class="field-label">API Key</label>
-            <input id="apiKey" class="input" type="password" spellcheck="false" placeholder="sk-…" autocomplete="off" />
+            <input id="apiKey" class="input" type="password" spellcheck="false" placeholder="sk-…" autocomplete="new-password" />
             <button id="btnKeyToggle" class="btn small ghost" title="显示/隐藏" data-i18n-title="api.toggleKey">👁</button>
           </div>
           <div class="row">
@@ -242,6 +242,14 @@
           </div>
         </div>
 
+        <div id="statsProgress" class="stats-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+          <div class="stats-progress-head">
+            <span id="statsProgressText" aria-live="polite">正在扫描会话文件…</span>
+            <strong id="statsProgressPercent">0%</strong>
+          </div>
+          <div class="stats-progress-track"><div id="statsProgressFill" class="stats-progress-fill"></div></div>
+        </div>
+
         <div class="stats-overview">
           <div class="card stat-card"><div class="stat-num" id="stTotalTokens">—</div><div class="stat-label" data-i18n="stats.totalTokens">总 Token</div></div>
           <div class="card stat-card"><div class="stat-num" id="stHitRate">—</div><div class="stat-label" data-i18n="stats.hitRate">缓存命中率</div></div>
@@ -256,8 +264,22 @@
         </div>
 
         <div class="card">
-          <div class="stats-sub" data-i18n="stats.details">用量明细</div>
-          <div class="stats-grid" id="statsGrid"></div>
+          <div class="stats-section-head">
+            <div>
+              <div class="stats-sub" data-i18n="stats.details">用量明细</div>
+              <p data-i18n="stats.detailsSubtitle">按时间查看 Token 用量</p>
+            </div>
+            <div class="timeline-tools">
+              <span id="timelineRange" class="timeline-range">—</span>
+              <div class="timeline-periods" role="group" aria-label="统计周期" data-i18n-aria-label="stats.periodAria">
+                <button class="timeline-period" type="button" data-timeline-period="month" aria-pressed="false" data-i18n="stats.periodMonth">月</button>
+                <button class="timeline-period active" type="button" data-timeline-period="day" aria-pressed="true" data-i18n="stats.periodDay">日</button>
+                <button class="timeline-period" type="button" data-timeline-period="hour" aria-pressed="false" data-i18n="stats.periodHour">小时</button>
+              </div>
+            </div>
+          </div>
+          <div id="usageTimeline" class="usage-timeline"></div>
+          <div class="stats-grid stats-grid-compact" id="statsGrid"></div>
         </div>
 
         <div class="card">
@@ -289,10 +311,10 @@
           <div class="stats-sub" data-i18n="plugins.onlineInstall">在线安装</div>
           <div class="row">
             <label class="field-label" data-i18n="plugins.spec">包名 / spec</label>
-            <input id="pluginSpec" class="input" type="text" spellcheck="false" placeholder="例如 @deepseek-ai/dsh-xxx 或任意 npm 包名" data-i18n-placeholder="plugins.specPlaceholder" />
+            <input id="pluginSpec" class="input" type="text" spellcheck="false" placeholder="例如 @deepseek-ai/dsh-xxx（仅安装你信任的来源）" data-i18n-placeholder="plugins.specPlaceholder" />
             <button id="btnPluginInstall" class="btn primary" data-i18n="plugins.install">安装</button>
           </div>
-          <p class="note" data-i18n="plugins.note">支持 npm 包名、git 地址等 pnpm 可解析的 spec。安装/卸载后需重启 Harness 生效；安装日志见「运行日志」。</p>
+          <p class="note" data-i18n="plugins.note">安全提示：插件属于可执行代码，运行后可能读取 Harness API Key。只安装你审查并信任的 npm/Git 来源；安装/卸载后需重启 Harness。</p>
         </div>
 
         <div class="card">

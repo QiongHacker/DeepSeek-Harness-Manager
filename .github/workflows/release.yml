@@ -9,7 +9,7 @@ on:
       tag:
         description: Existing Git tag to publish
         required: true
-        default: v1.0.0
+        default: v1.1.0
 
 permissions:
   contents: write
@@ -69,8 +69,17 @@ jobs:
       - name: Run core test suite
         run: pnpm test
 
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level high
+
+      - name: Scan source and Git history for secrets
+        run: pnpm run security:audit -- --source-only
+
       - name: Build portable and extract-once packages
         run: pnpm run dist -- --publish never
+
+      - name: Scan release artifacts for secrets
+        run: pnpm run security:audit
 
       - name: Create checksums
         shell: pwsh

@@ -1,7 +1,7 @@
 {
   "name": "dsh-manager",
   "productName": "DSH Manager",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A modern Windows manager for deploying, binding, starting, stopping, and updating DeepSeek Harness",
   "main": "main.js",
   "author": "QiongHacker",
@@ -18,6 +18,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node core/service.test.js",
+    "security:audit": "node scripts/security-audit.js",
     "icon": "electron scripts/render-icon.js && node scripts/make-ico.mjs",
     "dist": "electron-builder --win --x64",
     "dist:portable": "electron-builder --win portable --x64",
@@ -25,12 +26,15 @@
     "pack": "electron-builder --win dir --x64"
   },
   "devDependencies": {
-    "electron": "^37.0.0",
+    "@electron/fuses": "^2.1.3",
+    "electron": "^43.4.0",
     "electron-builder": "^26.0.0"
   },
   "build": {
     "appId": "com.dsh.manager",
     "productName": "DSH Manager",
+    "asar": true,
+    "afterPack": "scripts/after-pack.mjs",
     "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "dist"
@@ -40,6 +44,7 @@
       "preload.js",
       "renderer/**",
       "core/service.js",
+      "core/security.js",
       "core/stats.js",
       "core/stats-worker.js",
       "build/icon.ico"

@@ -10,6 +10,14 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const YAML = require('yaml');
+const {
+  isSafePackageName,
+  isSafePluginSpec,
+  redactSensitiveText,
+  sanitizeApiBindingInput,
+  sanitizeStoredServiceConfig,
+  stripSensitiveConfig
+} = require('./security');
 
 const DEFAULT_CHECKOUT = process.env.DSH_CHECKOUT || path.join(os.homedir(), 'deepseek-harness');
 const DEFAULT_PORT = 3080;
@@ -17,7 +25,7 @@ const DEFAULT_URL = 'http://127.0.0.1:3080';
 const DEFAULT_REPO = 'https://github.com/deepseek-ai/deepseek-harness.git';
 const DEFAULT_DSH_HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh');
 const DEFAULT_PLATFORM_URL = 'https://platform.deepseek.com/api_keys';
-const DEFAULT_DEPLOY_MIRROR = 'https://ghfast.top/https://github.com/deepseek-ai/deepseek-harness.git';
+const DEFAULT_DEPLOY_MIRROR = '';
 const DEFAULT_NPM_MIRROR = 'https://registry.npmmirror.com';
 const { DEFAULT_PRICING } = require('./stats.js');
 
@@ -31,6 +39,13 @@ function execCapture(cmd, args, opts = {}) {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function writePrivateFile(filePath, contents) {
+  fs.writeFileSync(filePath, contents, { mode: 0o600 });
+  if (process.platform !== 'win32') {
+    try { fs.chmodSync(filePath, 0o600); } catch { /* best effort on non-Windows platforms */ }
+  }
+}
 
 // Harness 需要 Node ^22.19.0 || >=24.0.0
 function isNodeVersionOk(v) {
@@ -52,6 +67,7 @@ class Service extends EventEmitter {
     this._state = 'stopped'; // stopped | starting | running | stopping | updating | deploying
     this._logBuf = [];
     this._prereqCache = null;
+    this._knownSecrets = new Set();
   }
 
   get state() { return this._state; }
@@ -71,22 +87,29 @@ class Service extends EventEmitter {
       startCommand: ['cmd', '/c', 'pnpm', 'dsh', 'web']
     };
     try {
-      const j = JSON.parse(fs.readFileSync(this.configPath, 'utf8'));
+      const j = sanitizeStoredServiceConfig(JSON.parse(fs.readFileSync(this.configPath, 'utf8')));
       return { ...def, ...j };
     } catch { return def; }
   }
 
   saveConfig() {
     try {
+      this.config = stripSensitiveConfig(this.config);
       fs.mkdirSync(path.dirname(this.configPath), { recursive: true });
-      fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+      writePrivateFile(this.configPath, JSON.stringify(sanitizeStoredServiceConfig(this.config), null, 2));
     } catch (e) {
       this._log('warn', this._m('保存配置失败: ', 'Unable to save settings: ') + e.message);
     }
   }
 
   setConfig(patch) {
+    const resetStats = Object.prototype.hasOwnProperty.call(patch, 'dshHome') ||
+      Object.prototype.hasOwnProperty.call(patch, 'apiPricing');
     this.config = { ...this.config, ...patch };
+    if (resetStats) {
+      this._statsCache = null;
+      this._statsCacheAt = 0;
+    }
     this.saveConfig();
     this.emit('config', this.config);
   }
@@ -154,7 +177,7 @@ class Service extends EventEmitter {
     const entry = {
       time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
       level,
-      line: String(line).replace(/\r?\n$/, '')
+      line: redactSensitiveText(String(line).replace(/\r?\n$/, ''), this._knownSecrets)
     };
     this._logBuf.push(entry);
     if (this._logBuf.length > 2000) this._logBuf.shift();
@@ -347,7 +370,7 @@ class Service extends EventEmitter {
   _maskKey(key) {
     const k = String(key || '');
     if (k.length <= 8) return k ? '****' : '';
-    return k.slice(0, 3) + '****' + k.slice(-4);
+    return '••••' + k.slice(-4);
   }
 
   async getApiBinding() {
@@ -363,6 +386,7 @@ class Service extends EventEmitter {
     const cDoc = this._readYaml(credentials);
     const envKey = cDoc.get('DEEPSEEK_API_KEY') || '';
     if (envKey) { apiKey = apiKey || envKey; }
+    if (apiKey || envKey) this._knownSecrets.add(String(apiKey || envKey));
     const bound = !!(apiKey || envKey);
     if (bound) keySource = '已绑定';
     return {
@@ -379,6 +403,10 @@ class Service extends EventEmitter {
   }
 
   async saveApiBinding({ baseURL, apiKey, platformUrl } = {}) {
+    const validated = sanitizeApiBindingInput({ baseURL, apiKey, platformUrl });
+    if (!validated.ok) return validated;
+    ({ baseURL, apiKey, platformUrl } = validated.value);
+    this._knownSecrets.add(apiKey);
     const { home, settings, credentials } = this._apiPaths();
     try { fs.mkdirSync(home, { recursive: true }); } catch (e) {
       this._log('error', this._m(`创建 ${home} 失败: ${e.message}`, `Unable to create ${home}: ${e.message}`));
@@ -389,11 +417,11 @@ class Service extends EventEmitter {
       const sDoc = this._readYaml(settings);
       sDoc.setIn(['llm-deepseek', 'apiKey'], String(apiKey || ''));
       if (baseURL) sDoc.setIn(['llm-deepseek', 'baseURL'], String(baseURL));
-      fs.writeFileSync(settings, sDoc.toString());
+      writePrivateFile(settings, sDoc.toString());
       // .credentials.yaml：DEEPSEEK_API_KEY（环境变量方式同样可用，热更新）
       const cDoc = this._readYaml(credentials);
       cDoc.set('DEEPSEEK_API_KEY', String(apiKey || ''));
-      fs.writeFileSync(credentials, cDoc.toString());
+      writePrivateFile(credentials, cDoc.toString());
     } catch (e) {
       this._log('error', this._m('保存 API 配置失败: ', 'Unable to save API settings: ') + e.message);
       return { ok: false, reason: 'write-failed' };
@@ -409,7 +437,14 @@ class Service extends EventEmitter {
   // ---------- Token 统计（worker 线程计算，不阻塞主进程 UI） ----------
 
   async getStats({ force = false } = {}) {
-    if (!force && this._statsCache && Date.now() - this._statsCacheAt < 60000) return this._statsCache;
+    if (!force && this._statsCache && Date.now() - this._statsCacheAt < 60000) {
+      const cache = this._statsCache.cache || {};
+      this.emit('stats-progress', {
+        phase: 'done', percent: 100, processed: cache.files || 0, total: cache.files || 0,
+        hits: cache.hits || 0, parsed: cache.parsed || 0, memoryCache: true
+      });
+      return this._statsCache;
+    }
     if (this._statsInFlight) return this._statsInFlight;
 
     this._statsInFlight = new Promise(resolve => {
@@ -417,7 +452,11 @@ class Service extends EventEmitter {
       const worker = new Worker(path.join(__dirname, 'stats-worker.js'), {
         workerData: {
           dshHome: this.config.dshHome || DEFAULT_DSH_HOME,
-          pricing: { ...DEFAULT_PRICING, ...(this.config.apiPricing || {}) }
+          pricing: { ...DEFAULT_PRICING, ...(this.config.apiPricing || {}) },
+          cachePath: path.join(
+            path.dirname(this.configPath),
+            `${path.basename(this.configPath, path.extname(this.configPath))}-stats-cache-v1.json`
+          )
         }
       });
       const timer = setTimeout(() => {
@@ -426,11 +465,16 @@ class Service extends EventEmitter {
         resolve({ ok: false, error: 'timeout' });
       }, 120000);
       worker.on('message', m => {
+        if (m && m.type === 'progress') {
+          this.emit('stats-progress', m.progress || {});
+          return;
+        }
+        const result = m && m.type === 'result' ? m.result : m;
         clearTimeout(timer);
         this._statsInFlight = null;
-        this._statsCache = m;
+        this._statsCache = result;
         this._statsCacheAt = Date.now();
-        resolve(m);
+        resolve(result);
       });
       worker.on('error', e => {
         clearTimeout(timer);
@@ -513,6 +557,7 @@ class Service extends EventEmitter {
     if (!this.checkoutExists()) return { ok: false, reason: 'checkout-not-found' };
     const s = String(spec || '').trim();
     if (!s) return { ok: false, reason: 'empty-spec' };
+    if (!isSafePluginSpec(s)) return { ok: false, reason: 'invalid-spec' };
     this._log('info', this._m(`安装插件：${s}（dsh plugin add，需要联网）…`, `Installing plugin ${s} with dsh plugin add…`));
     const code = await this._runLogged(this._pluginCommand(['add', s]), this.config.checkout, this._m('插件安装', 'Plugin install'));
     if (code !== 0) {
@@ -527,6 +572,7 @@ class Service extends EventEmitter {
     if (!this.checkoutExists()) return { ok: false, reason: 'checkout-not-found' };
     const n = String(name || '').trim();
     if (!n) return { ok: false, reason: 'empty-name' };
+    if (!isSafePackageName(n)) return { ok: false, reason: 'invalid-name' };
     this._log('info', this._m(`卸载插件：${n}（dsh plugin remove）…`, `Removing plugin ${n} with dsh plugin remove…`));
     const code = await this._runLogged(this._pluginCommand(['remove', n]), this.config.checkout, this._m('插件卸载', 'Plugin removal'));
     if (code !== 0) {

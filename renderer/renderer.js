@@ -31,7 +31,7 @@ const I18N = {
     'settings.harnessDir': 'Harness 目录', 'settings.pathPlaceholder': '例如 C:\\Users\\你的用户名\\deepseek-harness',
     'settings.bindPath': '验证并绑定', 'settings.choosePath': '选择目录',
     'settings.openFolder': '打开文件夹', 'settings.mirror': '下载镜像（可选）',
-    'settings.mirrorNote': '首次部署必须联网。若 GitHub 下载失败，会自动切换到上方镜像重试（npm 依赖失败则自动用国内镜像）；镜像地址可自定义。',
+    'settings.mirrorNote': '首次部署必须联网。默认只信任官方 GitHub 源；仅在你明确填写 HTTPS 镜像后才会回退使用（npm 依赖失败仍会用带完整性校验的国内镜像重试）。',
     'settings.openAfterStart': '启动成功后自动打开网页',
     'settings.envNote': '「概览」页的环境与部署面板会持续显示部署状态与环境检查结果（Git / Node.js / pnpm），缺少工具时启动会提前给出明确提示。',
     'api.title': 'API 绑定', 'api.unbound': '未绑定', 'api.provider': '服务商',
@@ -43,13 +43,17 @@ const I18N = {
     'stats.title': 'Token 统计', 'stats.subtitle': '基于会话日志聚合的用量与计费估算',
     'stats.totalTokens': '总 Token', 'stats.hitRate': '缓存命中率', 'stats.cost': '计费估算 (USD)',
     'stats.llmCalls': 'LLM 调用', 'stats.composition': 'Token 构成', 'stats.details': '用量明细',
+    'stats.detailsSubtitle': '按月、日或小时查看 Token 用量', 'stats.timelineAria': '{period} Token 用量柱状图',
+    'stats.periodAria': '统计周期', 'stats.periodMonth': '月', 'stats.periodDay': '日', 'stats.periodHour': '小时',
+    'stats.rangeMonth': '最近 12 个月', 'stats.rangeDay': '最近 30 天', 'stats.rangeHour': '最近 24 小时',
+    'stats.timelineTokens': 'Token', 'stats.timelineCalls': '调用', 'stats.timelineEmpty': '暂无可按时间展示的 Token 用量',
     'stats.byModel': '按模型', 'stats.model': '模型', 'stats.calls': '调用', 'stats.input': '输入',
     'stats.cacheRead': '缓存读', 'stats.cacheWrite': '缓存写', 'stats.outputReasoning': '输出+推理',
     'stats.total': '合计', 'stats.costUsd': '费用 (USD)',
     'plugins.title': '插件管理', 'plugins.subtitle': '本地插件查看与卸载，在线安装新插件（官方 dsh plugin 机制）',
     'plugins.onlineInstall': '在线安装', 'plugins.spec': '包名 / spec',
-    'plugins.specPlaceholder': '例如 @deepseek-ai/dsh-xxx 或任意 npm 包名', 'plugins.install': '安装',
-    'plugins.note': '支持 npm 包名、git 地址等 pnpm 可解析的 spec。安装/卸载后需重启 Harness 生效；安装日志见「运行日志」。',
+    'plugins.specPlaceholder': '例如 @deepseek-ai/dsh-xxx（仅安装你信任的来源）', 'plugins.install': '安装',
+    'plugins.note': '安全提示：插件属于可执行代码，运行后可能读取 Harness API Key。只安装你审查并信任的 npm/Git 来源；安装/卸载后需重启 Harness。',
     'plugins.installed': '已安装插件',
     'logs.title': '运行日志', 'logs.subtitle': '启动 / 停止 / 更新过程的实时输出', 'logs.autoScroll': '自动滚动',
     'theme.switchLight': '切换到浅色模式', 'theme.switchDark': '切换到深色模式',
@@ -63,6 +67,8 @@ const I18N = {
     'deploy.warnEnv': '⚠ 环境异常：缺少 {missing}，可能导致启动失败。请安装所需工具后点击「环境检查」，或点击「重新部署」。',
     'api.bound': '已绑定 {key}', 'api.keyPlaceholder': '已绑定 {key}',
     'stats.calculating': '统计计算中…', 'stats.readFailed': '统计读取失败：{error}', 'stats.noData': '暂无数据',
+    'stats.progressScanning': '正在扫描会话文件…', 'stats.progressProcessing': '正在统计：{processed}/{total} 个文件',
+    'stats.progressSaving': '正在保存增量缓存…', 'stats.progressDone': '统计完成',
     'stats.dataNote': '数据目录：{root} · 更新于 {time} · 费用为按公开定价的估算值',
     'stats.sessions': '会话数', 'stats.turns': '对话轮次', 'stats.steps': '步骤数',
     'stats.userMessages': '用户消息', 'stats.toolCalls': '工具调用', 'stats.inputUncached': '输入（未缓存）',
@@ -75,7 +81,7 @@ const I18N = {
     'plugins.profileNote': 'profile：{profile} · 目录：{dir} · 卸载后需重启 Harness 生效',
     'plugins.listFailed': '插件列表读取失败：{error}',
     'toast.checkoutMissing': '⚠ 未找到 Harness 目录，请检查路径设置',
-    'confirm.pluginInstall': '将安装插件：{spec}\n\n安装过程需要联网，完成后需重启 Harness 生效，继续吗？',
+    'confirm.pluginInstall': '将安装插件：{spec}\n\n插件属于可执行代码，可能读取你的 Harness API Key。请确认来源可信；安装后需重启 Harness。继续吗？',
     'confirm.pluginUninstall': '确定卸载插件 {name} 吗？卸载后需重启 Harness 生效。',
     'confirm.stopExternal': '检测到由外部启动的 Harness 实例，确定要终止它吗？',
     'confirm.redeploy': '重新部署将停止服务、删除现有目录并重新下载安装，确定继续吗？',
@@ -106,7 +112,7 @@ const I18N = {
     'toast.bindInvalid': '所选目录不是有效的 DeepSeek Harness 源码目录',
     'toast.bindNotFound': '目录不存在或无法访问', 'toast.bindRunning': '请先停止当前 Harness，再切换绑定目录',
     'toast.bindFailed': '绑定失败：{reason}', 'toast.mirrorSaved': '已保存下载镜像：{mirror}',
-    'toast.mirrorCleared': '已清除下载镜像（将使用默认镜像）', 'toast.openingPlatform': '正在打开 API 管理平台…',
+    'toast.mirrorCleared': '已清除下载镜像（仅使用官方 GitHub 源）', 'toast.openingPlatform': '正在打开 API 管理平台…',
     'toast.apiKeyRequired': '⚠ 请填写 API Key', 'toast.baseUrlRequired': '⚠ 请填写 Base URL',
     'toast.apiSaved': '✅ API 已保存，立即生效', 'toast.saveFailed': '保存失败：{reason}', 'common.unknownReason': '未知原因'
   },
@@ -132,7 +138,7 @@ const I18N = {
     'settings.harnessDir': 'Harness directory', 'settings.pathPlaceholder': 'For example C:\\Users\\you\\deepseek-harness',
     'settings.bindPath': 'Validate & bind', 'settings.choosePath': 'Choose folder',
     'settings.openFolder': 'Open folder', 'settings.mirror': 'Download mirror (optional)',
-    'settings.mirrorNote': 'The first deployment requires internet access. If GitHub fails, the configured mirror is tried automatically; npm packages also fall back to a mirror.',
+    'settings.mirrorNote': 'The first deployment requires internet access. Only the official GitHub source is trusted by default; a fallback is used only when you explicitly configure an HTTPS mirror. npm retries use lockfile integrity checks.',
     'settings.openAfterStart': 'Open the web app after startup',
     'settings.envNote': 'The Overview page always shows deployment status and Git / Node.js / pnpm checks, with clear guidance when a tool is missing.',
     'api.title': 'API Binding', 'api.unbound': 'Not bound', 'api.provider': 'Provider',
@@ -144,13 +150,17 @@ const I18N = {
     'stats.title': 'Token Usage', 'stats.subtitle': 'Usage and cost estimates aggregated from session logs',
     'stats.totalTokens': 'Total tokens', 'stats.hitRate': 'Cache hit rate', 'stats.cost': 'Estimated cost (USD)',
     'stats.llmCalls': 'LLM calls', 'stats.composition': 'Token breakdown', 'stats.details': 'Usage details',
+    'stats.detailsSubtitle': 'View token usage by month, day, or hour', 'stats.timelineAria': 'Token usage bar chart by {period}',
+    'stats.periodAria': 'Statistics period', 'stats.periodMonth': 'Month', 'stats.periodDay': 'Day', 'stats.periodHour': 'Hour',
+    'stats.rangeMonth': 'Last 12 months', 'stats.rangeDay': 'Last 30 days', 'stats.rangeHour': 'Last 24 hours',
+    'stats.timelineTokens': 'tokens', 'stats.timelineCalls': 'calls', 'stats.timelineEmpty': 'No timed token usage is available',
     'stats.byModel': 'By model', 'stats.model': 'Model', 'stats.calls': 'Calls', 'stats.input': 'Input',
     'stats.cacheRead': 'Cache read', 'stats.cacheWrite': 'Cache write', 'stats.outputReasoning': 'Output + reasoning',
     'stats.total': 'Total', 'stats.costUsd': 'Cost (USD)',
     'plugins.title': 'Plugin Manager', 'plugins.subtitle': 'View, install, and remove plugins using the official dsh plugin mechanism',
     'plugins.onlineInstall': 'Install online', 'plugins.spec': 'Package / spec',
-    'plugins.specPlaceholder': 'For example @deepseek-ai/dsh-xxx or any npm package', 'plugins.install': 'Install',
-    'plugins.note': 'Supports npm packages, Git URLs, and other pnpm specs. Restart Harness after installing or removing a plugin.',
+    'plugins.specPlaceholder': 'For example @deepseek-ai/dsh-xxx (trusted sources only)', 'plugins.install': 'Install',
+    'plugins.note': 'Security notice: plugins are executable code and may read the Harness API key. Install only reviewed npm/Git sources you trust. Restart Harness after changes.',
     'plugins.installed': 'Installed plugins',
     'logs.title': 'Runtime Logs', 'logs.subtitle': 'Live output from start, stop, update, and deployment operations', 'logs.autoScroll': 'Auto-scroll',
     'theme.switchLight': 'Switch to light mode', 'theme.switchDark': 'Switch to dark mode',
@@ -164,6 +174,8 @@ const I18N = {
     'deploy.warnEnv': '⚠ Environment issue: missing {missing}. Install the required tools, then check the environment or redeploy.',
     'api.bound': 'Bound {key}', 'api.keyPlaceholder': 'Bound {key}',
     'stats.calculating': 'Calculating usage…', 'stats.readFailed': 'Unable to read usage: {error}', 'stats.noData': 'No data',
+    'stats.progressScanning': 'Scanning session files…', 'stats.progressProcessing': 'Processing {processed} of {total} files',
+    'stats.progressSaving': 'Saving incremental cache…', 'stats.progressDone': 'Usage ready',
     'stats.dataNote': 'Data: {root} · Updated {time} · Costs are estimates based on public pricing',
     'stats.sessions': 'Sessions', 'stats.turns': 'Turns', 'stats.steps': 'Steps',
     'stats.userMessages': 'User messages', 'stats.toolCalls': 'Tool calls', 'stats.inputUncached': 'Input (uncached)',
@@ -176,7 +188,7 @@ const I18N = {
     'plugins.profileNote': 'Profile: {profile} · Directory: {dir} · Restart Harness after uninstalling',
     'plugins.listFailed': 'Unable to read plugin list: {error}',
     'toast.checkoutMissing': '⚠ Harness directory not found. Check the path in Settings.',
-    'confirm.pluginInstall': 'Install plugin: {spec}\n\nThis requires internet access. Restart Harness when it finishes. Continue?',
+    'confirm.pluginInstall': 'Install plugin: {spec}\n\nPlugins are executable code and may read your Harness API key. Confirm that you trust this source. Restart Harness afterward. Continue?',
     'confirm.pluginUninstall': 'Uninstall {name}? Restart Harness afterward to apply the change.',
     'confirm.stopExternal': 'Harness was started outside this manager. Do you want to terminate it?',
     'confirm.redeploy': 'Redeploying stops the service, deletes the current directory, and downloads a fresh copy. Continue?',
@@ -207,7 +219,7 @@ const I18N = {
     'toast.bindInvalid': 'The selected folder is not a valid DeepSeek Harness source checkout',
     'toast.bindNotFound': 'The folder does not exist or cannot be accessed', 'toast.bindRunning': 'Stop the current Harness before switching folders',
     'toast.bindFailed': 'Unable to bind: {reason}', 'toast.mirrorSaved': 'Download mirror saved: {mirror}',
-    'toast.mirrorCleared': 'Download mirror cleared; the default will be used', 'toast.openingPlatform': 'Opening the API platform…',
+    'toast.mirrorCleared': 'Download mirror cleared; only the official GitHub source will be used', 'toast.openingPlatform': 'Opening the API platform…',
     'toast.apiKeyRequired': '⚠ Enter an API key', 'toast.baseUrlRequired': '⚠ Enter a Base URL',
     'toast.apiSaved': '✅ API settings saved and active', 'toast.saveFailed': 'Unable to save: {reason}', 'common.unknownReason': 'Unknown reason'
   }
@@ -248,10 +260,12 @@ const els = {
   apiBaseUrl: $('#apiBaseUrl'), apiKey: $('#apiKey'), btnKeyToggle: $('#btnKeyToggle'),
   apiPlatformUrl: $('#apiPlatformUrl'), btnOpenPlatform: $('#btnOpenPlatform'),
   btnSaveApi: $('#btnSaveApi'), apiHint: $('#apiHint'),
-  btnStatsRefresh: $('#btnStatsRefresh'),
+  btnStatsRefresh: $('#btnStatsRefresh'), statsProgress: $('#statsProgress'),
+  statsProgressText: $('#statsProgressText'), statsProgressPercent: $('#statsProgressPercent'), statsProgressFill: $('#statsProgressFill'),
   stTotalTokens: $('#stTotalTokens'), stHitRate: $('#stHitRate'), stCost: $('#stCost'), stLlmCalls: $('#stLlmCalls'),
   tokenBar: $('#tokenBar'), tokenLegend: $('#tokenLegend'),
-  statsGrid: $('#statsGrid'), modelTableBody: $('#modelTableBody'), statsNote: $('#statsNote'),
+  usageTimeline: $('#usageTimeline'), timelineRange: $('#timelineRange'), statsGrid: $('#statsGrid'),
+  modelTableBody: $('#modelTableBody'), statsNote: $('#statsNote'),
   btnPluginsRefresh: $('#btnPluginsRefresh'), pluginSpec: $('#pluginSpec'),
   btnPluginInstall: $('#btnPluginInstall'), pluginList: $('#pluginList'),
   pluginCount: $('#pluginCount'), pluginNote: $('#pluginNote')
@@ -260,6 +274,12 @@ const els = {
 let busy = false;
 let status = null;
 let lastApiBinding = null;
+let statsLoading = false;
+let statsProgressDelay = null;
+let statsProgressHide = null;
+let lastStatsProgress = null;
+let lastStatsData = null;
+let timelinePeriod = 'day';
 
 function applyLanguage(language) {
   currentLanguage = language === 'en-US' ? 'en-US' : 'zh-CN';
@@ -268,6 +288,9 @@ function applyLanguage(language) {
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
   document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+  document.querySelectorAll('[data-i18n-aria-label]').forEach(el => { el.setAttribute('aria-label', t(el.dataset.i18nAriaLabel)); });
+  if (lastStatsProgress) renderStatsProgress(lastStatsProgress);
+  if (lastStatsData) renderStats(lastStatsData);
   els.languageLabel.textContent = t('language.label');
   els.btnLanguage.title = t('language.switch');
   els.btnLanguage.setAttribute('aria-label', t('language.switch'));
@@ -437,6 +460,7 @@ async function init() {
   (await window.dsh.getLogs()).forEach(addLog);
   window.dsh.on('log', addLog);
   window.dsh.on('state', refresh);
+  window.dsh.on('stats-progress', renderStatsProgress);
   await refresh();
   setInterval(refresh, 3000);
   renderApiBinding(await window.dsh.getApiBinding());
@@ -461,53 +485,207 @@ const BAR_COLORS = [
   ['reasoning', '#ec4899', 'stats.reasoning']
 ];
 
+function statsProgressLabel(progress) {
+  if (progress.phase === 'processing') return t('stats.progressProcessing', progress);
+  if (progress.phase === 'saving') return t('stats.progressSaving');
+  if (progress.phase === 'done') return t('stats.progressDone');
+  return t('stats.progressScanning');
+}
+
+function renderStatsProgress(progress = {}) {
+  lastStatsProgress = progress;
+  const percent = Math.max(0, Math.min(100, Math.round(Number(progress.percent) || 0)));
+  els.statsProgressText.textContent = statsProgressLabel(progress);
+  els.statsProgressPercent.textContent = `${percent}%`;
+  els.statsProgressFill.style.width = `${percent}%`;
+  els.statsProgress.setAttribute('aria-valuenow', String(percent));
+}
+
+function beginStatsProgress() {
+  clearTimeout(statsProgressDelay);
+  clearTimeout(statsProgressHide);
+  els.statsProgress.hidden = true;
+  renderStatsProgress({ phase: 'scanning', percent: 0, processed: 0, total: 0 });
+  statsProgressDelay = setTimeout(() => { els.statsProgress.hidden = false; }, 120);
+}
+
+function finishStatsProgress(ok) {
+  clearTimeout(statsProgressDelay);
+  if (!ok) {
+    els.statsProgress.hidden = true;
+    return;
+  }
+  renderStatsProgress({ ...(lastStatsProgress || {}), phase: 'done', percent: 100 });
+  if (!els.statsProgress.hidden) statsProgressHide = setTimeout(() => { els.statsProgress.hidden = true; }, 500);
+}
+
+function timelineKey(date, period) {
+  const pad = value => String(value).padStart(2, '0');
+  const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  if (period === 'month') return day.slice(0, 7);
+  if (period === 'hour') return `${day}T${pad(date.getHours())}`;
+  return day;
+}
+
+function timelineLabel(date, period, full = false) {
+  if (period === 'month') {
+    return date.toLocaleDateString(currentLanguage, full
+      ? { year: 'numeric', month: 'long' }
+      : { year: '2-digit', month: 'short' });
+  }
+  if (period === 'hour') {
+    return date.toLocaleString(currentLanguage, full
+      ? { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }
+      : { month: 'numeric', day: 'numeric', hour: '2-digit' });
+  }
+  return date.toLocaleDateString(currentLanguage, full
+    ? { year: 'numeric', month: 'long', day: 'numeric' }
+    : { month: 'short', day: 'numeric' });
+}
+
+function timelineBuckets(timeline, period) {
+  const source = timeline.map(point => ({ ...point, timestamp: new Date(`${point.time}:00`).getTime() }))
+    .filter(point => Number.isFinite(point.timestamp));
+  if (!source.length) return [];
+  const count = period === 'month' ? 12 : period === 'hour' ? 24 : 30;
+  const end = new Date(Math.max(...source.map(point => point.timestamp)));
+  if (period === 'month') end.setMonth(end.getMonth(), 1);
+  else if (period === 'day') end.setHours(0, 0, 0, 0);
+  else end.setMinutes(0, 0, 0);
+
+  const buckets = [];
+  for (let offset = count - 1; offset >= 0; offset--) {
+    const date = new Date(end);
+    if (period === 'month') date.setMonth(date.getMonth() - offset);
+    else if (period === 'day') date.setDate(date.getDate() - offset);
+    else date.setHours(date.getHours() - offset);
+    buckets.push({ key: timelineKey(date, period), date, calls: 0, totalTokens: 0 });
+  }
+  const byKey = new Map(buckets.map(bucket => [bucket.key, bucket]));
+  for (const point of source) {
+    const bucket = byKey.get(timelineKey(new Date(point.timestamp), period));
+    if (!bucket) continue;
+    bucket.calls += Number(point.calls) || 0;
+    bucket.totalTokens += Number(point.totalTokens) || 0;
+  }
+  return buckets;
+}
+
+function renderUsageTimeline(timeline = []) {
+  const points = timelineBuckets(timeline, timelinePeriod);
+  document.querySelectorAll('[data-timeline-period]').forEach(button => {
+    const active = button.dataset.timelinePeriod === timelinePeriod;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  els.timelineRange.textContent = t(`stats.range${timelinePeriod[0].toUpperCase()}${timelinePeriod.slice(1)}`);
+  if (!points.length) {
+    els.usageTimeline.innerHTML = `<div class="timeline-empty">${t('stats.timelineEmpty')}</div>`;
+    return;
+  }
+
+  const width = 900;
+  const height = 226;
+  const plot = { left: 58, right: 18, top: 16, bottom: 34 };
+  const plotWidth = width - plot.left - plot.right;
+  const plotHeight = height - plot.top - plot.bottom;
+  const maxTokens = Math.max(1, ...points.map(point => Number(point.totalTokens) || 0));
+  const y = value => plot.top + plotHeight - (Number(value) || 0) / maxTokens * plotHeight;
+  const grid = [0, 0.25, 0.5, 0.75, 1].map(ratio => {
+    const gridY = plot.top + plotHeight * (1 - ratio);
+    return `<line class="timeline-grid" x1="${plot.left}" y1="${gridY}" x2="${width - plot.right}" y2="${gridY}"></line>` +
+      `<text class="timeline-axis-label" x="${plot.left - 9}" y="${gridY + 3}" text-anchor="end">${fmtCompact(maxTokens * ratio)}</text>`;
+  }).join('');
+  const labelCount = Math.min(6, points.length);
+  const labelIndexes = [...new Set(Array.from({ length: labelCount }, (_, index) =>
+    labelCount === 1 ? 0 : Math.round(index * (points.length - 1) / (labelCount - 1))))];
+  const dateLabels = labelIndexes.map(index => {
+    const slotWidth = plotWidth / points.length;
+    const label = timelineLabel(points[index].date, timelinePeriod);
+    return `<text class="timeline-axis-label" x="${plot.left + slotWidth * (index + 0.5)}" y="${height - 10}" text-anchor="middle">${escapeHtml(label)}</text>`;
+  }).join('');
+  const slotWidth = plotWidth / points.length;
+  const barWidth = Math.max(5, Math.min(30, slotWidth * 0.64));
+  const bars = points.map((point, index) => {
+    const barY = y(point.totalTokens);
+    const barHeight = point.totalTokens > 0 ? Math.max(2, plot.top + plotHeight - barY) : 0;
+    const barX = plot.left + slotWidth * index + (slotWidth - barWidth) / 2;
+    const title = `${timelineLabel(point.date, timelinePeriod, true)} · ${fmtNum(point.totalTokens)} ${t('stats.timelineTokens')} · ${fmtNum(point.calls)} ${t('stats.timelineCalls')}`;
+    return `<rect class="timeline-bar" x="${barX.toFixed(2)}" y="${(plot.top + plotHeight - barHeight).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${barHeight.toFixed(2)}" rx="3"><title>${escapeHtml(title)}</title></rect>`;
+  }).join('');
+
+  const periodLabel = t(`stats.period${timelinePeriod[0].toUpperCase()}${timelinePeriod.slice(1)}`);
+  els.usageTimeline.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(t('stats.timelineAria', { period: periodLabel }))}">` +
+    `${grid}${bars}${dateLabels}</svg>`;
+}
+
+function renderStats(s) {
+  const tokens = s.tokens || {};
+  els.stTotalTokens.textContent = fmtCompact(s.totalTokens);
+  els.stHitRate.textContent = ((Number(s.hitRate) || 0) * 100).toFixed(1) + '%';
+  els.stCost.textContent = fmtUsd(s.cost);
+  els.stLlmCalls.textContent = fmtNum(s.llmCalls);
+
+  const parts = BAR_COLORS.map(([key, color, labelKey]) => ({ key, color, label: t(labelKey), v: tokens[key] || 0 }))
+    .filter(part => part.v > 0);
+  const total = parts.reduce((sum, part) => sum + part.v, 0) || 1;
+  els.tokenBar.innerHTML = parts.map(part =>
+    `<span class="bar-seg" style="width:${(part.v / total * 100).toFixed(2)}%;background:${part.color}" title="${escapeHtml(part.label)}: ${fmtNum(part.v)}"></span>`).join('');
+  els.tokenLegend.innerHTML = parts.map(part =>
+    `<span class="lg"><i style="background:${part.color}"></i>${escapeHtml(part.label)} <b>${fmtCompact(part.v)}</b> (${(part.v / total * 100).toFixed(1)}%)</span>`).join('');
+
+  renderUsageTimeline(s.timeline || []);
+  const rows = [
+    [t('stats.sessions'), fmtNum(s.sessions)], [t('stats.turns'), fmtNum(s.turns)], [t('stats.steps'), fmtNum(s.steps)],
+    [t('stats.userMessages'), fmtNum(s.userMessages)], [t('stats.toolCalls'), fmtNum(s.toolCalls)], [t('stats.llmCalls'), fmtNum(s.llmCalls)]
+  ];
+  els.statsGrid.innerHTML = rows.map(([label, value]) =>
+    `<div class="sg-item"><span>${escapeHtml(label)}</span><b>${value}</b></div>`).join('');
+
+  els.modelTableBody.innerHTML = (s.models || []).map(model =>
+    `<tr><td>${escapeHtml(model.model)}</td><td>${fmtNum(model.calls)}</td><td>${fmtCompact(model.tokens.input)}</td>` +
+    `<td>${fmtCompact(model.tokens.cacheRead)}</td><td>${fmtCompact(model.tokens.cacheWrite)}</td>` +
+    `<td>${fmtCompact(model.tokens.output + model.tokens.reasoning)}</td><td><b>${fmtCompact(model.totalTokens)}</b></td>` +
+    `<td>${fmtUsd(model.cost)}</td></tr>`).join('') ||
+    `<tr><td colspan="8" class="dim-cell">${t('stats.noData')}</td></tr>`;
+
+  els.statsNote.textContent = t('stats.dataNote', {
+    root: s.sessionsRoot,
+    time: new Date(s.updatedAt).toLocaleTimeString(currentLanguage, { hour12: false })
+  });
+}
+
 async function loadStats(force) {
+  if (statsLoading) return;
+  statsLoading = true;
+  els.btnStatsRefresh.disabled = true;
+  beginStatsProgress();
+  let succeeded = false;
   try {
     els.statsNote.textContent = t('stats.calculating');
     const s = await window.dsh.getStats({ force: !!force });
     if (!s || !s.ok) { els.statsNote.textContent = t('stats.readFailed', { error: s && s.error || '' }); return; }
-    const tokens = s.tokens || {};
-    els.stTotalTokens.textContent = fmtCompact(s.totalTokens);
-    els.stHitRate.textContent = (s.hitRate * 100).toFixed(1) + '%';
-    els.stCost.textContent = fmtUsd(s.cost);
-    els.stLlmCalls.textContent = fmtNum(s.llmCalls);
-
-    // Token 构成条
-    const parts = BAR_COLORS.map(([key, color, labelKey]) => ({ key, color, label: t(labelKey), v: tokens[key] || 0 }))
-      .filter(p => p.v > 0);
-    const total = parts.reduce((a, p) => a + p.v, 0) || 1;
-    els.tokenBar.innerHTML = parts.map(p =>
-      `<span class="bar-seg" style="width:${(p.v / total * 100).toFixed(2)}%;background:${p.color}" title="${p.label}: ${fmtNum(p.v)}"></span>`).join('');
-    els.tokenLegend.innerHTML = parts.map(p =>
-      `<span class="lg"><i style="background:${p.color}"></i>${p.label} <b>${fmtCompact(p.v)}</b> (${(p.v / total * 100).toFixed(1)}%)</span>`).join('');
-
-    // 用量明细
-    const rows = [
-      [t('stats.sessions'), fmtNum(s.sessions)], [t('stats.turns'), fmtNum(s.turns)], [t('stats.steps'), fmtNum(s.steps)],
-      [t('stats.userMessages'), fmtNum(s.userMessages)], [t('stats.toolCalls'), fmtNum(s.toolCalls)], [t('stats.llmCalls'), fmtNum(s.llmCalls)],
-      [t('stats.inputUncached'), fmtNum(tokens.input)], [t('stats.cacheHit'), fmtNum(tokens.cacheRead)], [t('stats.cacheWritten'), fmtNum(tokens.cacheWrite)],
-      [t('stats.output'), fmtNum(tokens.output)], [t('stats.reasoning'), fmtNum(tokens.reasoning)], [t('stats.total'), fmtNum(s.totalTokens)]
-    ];
-    els.statsGrid.innerHTML = rows.map(([k, v]) => `<div class="sg-item"><span>${k}</span><b>${v}</b></div>`).join('');
-
-    // 按模型
-    els.modelTableBody.innerHTML = (s.models || []).map(m =>
-      `<tr><td>${m.model}</td><td>${fmtNum(m.calls)}</td><td>${fmtCompact(m.tokens.input)}</td>` +
-      `<td>${fmtCompact(m.tokens.cacheRead)}</td><td>${fmtCompact(m.tokens.cacheWrite)}</td>` +
-      `<td>${fmtCompact(m.tokens.output + m.tokens.reasoning)}</td><td><b>${fmtCompact(m.totalTokens)}</b></td>` +
-      `<td>${fmtUsd(m.cost)}</td></tr>`).join('') ||
-      `<tr><td colspan="8" class="dim-cell">${t('stats.noData')}</td></tr>`;
-
-    els.statsNote.textContent = t('stats.dataNote', {
-      root: s.sessionsRoot,
-      time: new Date(s.updatedAt).toLocaleTimeString(currentLanguage, { hour12: false })
-    });
+    lastStatsData = s;
+    renderStats(s);
+    succeeded = true;
   } catch (e) {
     els.statsNote.textContent = t('stats.readFailed', { error: String(e) });
+  } finally {
+    statsLoading = false;
+    els.btnStatsRefresh.disabled = false;
+    finishStatsProgress(succeeded);
   }
 }
 
 els.btnStatsRefresh.addEventListener('click', () => loadStats(true));
+document.querySelectorAll('[data-timeline-period]').forEach(button => {
+  button.addEventListener('click', () => {
+    const next = button.dataset.timelinePeriod;
+    if (!['month', 'day', 'hour'].includes(next) || next === timelinePeriod) return;
+    timelinePeriod = next;
+    renderUsageTimeline(lastStatsData && lastStatsData.timeline || []);
+  });
+});
 setInterval(() => {
   const active = document.querySelector('.tab-panel.active');
   if (active && active.id === 'tab-stats') loadStats();
@@ -767,7 +945,7 @@ els.btnLanguage.addEventListener('click', async () => {
   applyLanguage(next);
   await window.dsh.setConfig({ language: next });
   const active = document.querySelector('.tab-panel.active');
-  if (active && active.id === 'tab-stats') loadStats();
+  if (active && active.id === 'tab-stats' && !lastStatsData) loadStats();
   if (active && active.id === 'tab-plugins') loadPlugins();
 });
 els.btnQuit.addEventListener('click', () => window.dsh.quit());
@@ -801,8 +979,14 @@ els.btnSaveApi.addEventListener('click', async () => {
   if (!apiKey) { toast(t('toast.apiKeyRequired'), 'error'); return; }
   if (!baseURL) { toast(t('toast.baseUrlRequired'), 'error'); return; }
   setBusy(true);
-  const r = await window.dsh.saveApiBinding({ baseURL, apiKey, platformUrl });
-  setBusy(false);
+  let r;
+  try {
+    r = await window.dsh.saveApiBinding({ baseURL, apiKey, platformUrl });
+  } finally {
+    els.apiKey.value = '';
+    els.apiKey.type = 'password';
+    setBusy(false);
+  }
   if (r.ok) {
     toast(t('toast.apiSaved'));
     renderApiBinding(r);

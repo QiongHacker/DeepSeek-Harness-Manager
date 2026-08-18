@@ -1,6 +1,7 @@
 'use strict';
 
 const { contextBridge, ipcRenderer } = require('electron');
+const EVENT_CHANNELS = new Set(['state', 'log', 'config', 'stats-progress']);
 
 contextBridge.exposeInMainWorld('dsh', {
   getState: () => ipcRenderer.invoke('state:get'),
@@ -25,5 +26,8 @@ contextBridge.exposeInMainWorld('dsh', {
   openUrl: url => ipcRenderer.invoke('app:openUrl', url),
   openCheckout: () => ipcRenderer.invoke('app:openCheckout'),
   quit: () => ipcRenderer.invoke('app:quit'),
-  on: (ch, cb) => { ipcRenderer.on(ch, (_e, ...args) => cb(...args)); }
+  on: (ch, cb) => {
+    if (!EVENT_CHANNELS.has(ch) || typeof cb !== 'function') return;
+    ipcRenderer.on(ch, (_event, ...args) => cb(...args));
+  }
 });

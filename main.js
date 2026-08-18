@@ -1,11 +1,26 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, screen, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, dialog, protocol, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
 const { Service, DEFAULT_URL } = require('./core/service');
+const { sanitizeExternalUrl, sanitizeRendererConfigPatch, sanitizeStoredServiceConfig } = require('./core/security');
 
 let win = null;
+const rendererEntry = path.join(__dirname, 'renderer', 'index.html');
+const rendererUrl = 'app://dsh-manager/renderer/index.html';
+const rendererFiles = new Map([
+  ['/renderer/index.html', rendererEntry],
+  ['/renderer/renderer.js', path.join(__dirname, 'renderer', 'renderer.js')],
+  ['/renderer/styles.css', path.join(__dirname, 'renderer', 'styles.css')],
+  ['/renderer/logo.svg', path.join(__dirname, 'renderer', 'logo.svg')]
+]);
+
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'app',
+  privileges: { standard: true, secure: true }
+}]);
 
 function argValue(prefix) {
   const a = process.argv.find(x => x.startsWith(prefix + '='));
@@ -44,10 +59,19 @@ if (!gotLock) {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false
+        sandbox: true,
+        webSecurity: true,
+        allowRunningInsecureContent: false,
+        devTools: !app.isPackaged
       }
     });
     win.setMenuBarVisibility(false);
+    win.webContents.on('will-navigate', (event, url) => {
+      if (url !== rendererUrl) event.preventDefault();
+    });
+    win.webContents.on('will-attach-webview', event => event.preventDefault());
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    win.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     if (process.argv.includes('--startup-probe')) {
       win.webContents.once('did-finish-load', () => {
         setTimeout(() => {
@@ -55,7 +79,7 @@ if (!gotLock) {
         }, 150);
       });
     }
-    win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+    win.loadURL(rendererUrl);
     const previewLanguage = argValue('--language');
     if (previewLanguage === 'zh-CN' || previewLanguage === 'en-US') {
       win.webContents.once('did-finish-load', () => {
@@ -72,13 +96,34 @@ if (!gotLock) {
   }
 
   // ---------- IPC ----------
-  ipcMain.handle('state:get', () => svc.getStatus());
-  ipcMain.handle('service:start', () => svc.start());
-  ipcMain.handle('service:stop', () => svc.stop());
-  ipcMain.handle('deploy:run', (_e, opts) => svc.deploy(opts || {}));
-  ipcMain.handle('deploy:check', () => svc.checkDeploy({ force: true }));
-  ipcMain.handle('checkout:bind', (_e, checkout) => svc.bindCheckout(checkout));
-  ipcMain.handle('checkout:choose', async () => {
+  function isTrustedIpcEvent(event) {
+    return Boolean(win && !win.isDestroyed() && event.sender === win.webContents &&
+      event.senderFrame === win.webContents.mainFrame && event.senderFrame.url === rendererUrl);
+  }
+
+  function handle(channel, handler) {
+    ipcMain.handle(channel, (event, ...args) => {
+      if (!isTrustedIpcEvent(event)) throw new Error('Rejected untrusted IPC sender');
+      return handler(...args);
+    });
+  }
+
+  function openSafeExternal(url) {
+    const safe = sanitizeExternalUrl(url);
+    if (!safe) return { ok: false, reason: 'unsafe-url' };
+    return shell.openExternal(safe).then(() => ({ ok: true })).catch(() => ({ ok: false, reason: 'open-failed' }));
+  }
+
+  handle('state:get', () => svc.getStatus());
+  handle('service:start', () => svc.start());
+  handle('service:stop', () => svc.stop());
+  handle('deploy:run', opts => svc.deploy({ force: Boolean(opts && opts.force) }));
+  handle('deploy:check', () => svc.checkDeploy({ force: true }));
+  handle('checkout:bind', checkout => {
+    const value = String(checkout || '');
+    return value.length <= 32767 ? svc.bindCheckout(value) : { ok: false, reason: 'path-too-long' };
+  });
+  handle('checkout:choose', async () => {
     const result = await dialog.showOpenDialog(win, {
       title: svc.config.language === 'en-US' ? 'Select an existing DeepSeek Harness folder' : '选择已有 DeepSeek Harness 目录',
       defaultPath: fs.existsSync(svc.config.checkout) ? svc.config.checkout : path.dirname(svc.config.checkout),
@@ -87,32 +132,49 @@ if (!gotLock) {
     if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true, reason: 'canceled' };
     return svc.bindCheckout(result.filePaths[0]);
   });
-  ipcMain.handle('api:get', () => svc.getApiBinding());
-  ipcMain.handle('api:save', (_e, opts) => svc.saveApiBinding(opts || {}));
-  ipcMain.handle('stats:get', (_e, opts) => svc.getStats(opts || {}));
-  ipcMain.handle('plugins:get', () => svc.getPlugins());
-  ipcMain.handle('plugin:install', (_e, spec) => svc.pluginInstall(spec));
-  ipcMain.handle('plugin:uninstall', (_e, name) => svc.pluginUninstall(name));
-  ipcMain.handle('update:check', () => svc.checkUpdate());
-  ipcMain.handle('update:run', () => svc.update());
-  ipcMain.handle('config:get', () => svc.config);
-  ipcMain.handle('config:set', (_e, patch) => { svc.setConfig(patch || {}); return svc.config; });
-  ipcMain.handle('logs:get', () => svc.getLogs());
-  ipcMain.handle('app:open', () => shell.openExternal(DEFAULT_URL));
-  ipcMain.handle('app:openUrl', (_e, url) => { if (url) shell.openExternal(String(url)); });
-  ipcMain.handle('app:openCheckout', () => shell.openPath(svc.config.checkout));
-  ipcMain.handle('app:quit', () => app.quit());
+  handle('api:get', () => svc.getApiBinding());
+  handle('api:save', opts => svc.saveApiBinding(opts || {}));
+  handle('stats:get', opts => svc.getStats({ force: Boolean(opts && opts.force) }));
+  handle('plugins:get', () => svc.getPlugins());
+  handle('plugin:install', spec => svc.pluginInstall(spec));
+  handle('plugin:uninstall', name => svc.pluginUninstall(name));
+  handle('update:check', () => svc.checkUpdate());
+  handle('update:run', () => svc.update());
+  handle('config:get', () => sanitizeStoredServiceConfig(svc.config));
+  handle('config:set', patch => {
+    const safe = sanitizeRendererConfigPatch(patch);
+    if (!safe.ok) return safe;
+    svc.setConfig(safe.patch);
+    return { ok: true, ...sanitizeStoredServiceConfig(svc.config) };
+  });
+  handle('logs:get', () => svc.getLogs());
+  handle('app:open', () => shell.openExternal(DEFAULT_URL));
+  handle('app:openUrl', url => openSafeExternal(url));
+  handle('app:openCheckout', () => shell.openPath(svc.config.checkout));
+  handle('app:quit', () => app.quit());
 
   // ---------- 服务事件推送到界面 ----------
-  ['state', 'log', 'config'].forEach(ev => {
+  ['state', 'log', 'stats-progress'].forEach(ev => {
     svc.on(ev, (...args) => {
       if (win && !win.isDestroyed()) win.webContents.send(ev, ...args);
     });
+  });
+  svc.on('config', config => {
+    if (win && !win.isDestroyed()) win.webContents.send('config', sanitizeStoredServiceConfig(config));
   });
 
   app.setAppUserModelId('com.dsh.manager');
 
   app.whenReady().then(() => {
+    protocol.handle('app', request => {
+      const url = new URL(request.url);
+      if (request.method !== 'GET' || url.hostname !== 'dsh-manager' || url.search || url.hash) {
+        return new Response('Not found', { status: 404 });
+      }
+      const filePath = rendererFiles.get(url.pathname);
+      if (!filePath) return new Response('Not found', { status: 404 });
+      return net.fetch(pathToFileURL(filePath).href);
+    });
     createWindow();
     app.on('second-instance', () => {
       if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
@@ -180,6 +242,29 @@ if (!gotLock) {
             bindExisting: !!document.querySelector('#btnBindExisting'),
             chooseCheckout: !!document.querySelector('#btnChoosePath'),
             statsTab: !!document.querySelector('#tab-stats'),
+            statsProgress: (() => {
+              const node = document.querySelector('#statsProgress');
+              const fill = document.querySelector('#statsProgressFill');
+              return {
+                exists: Boolean(
+                  node &&
+                    fill &&
+                    document.querySelector('#statsProgressText') &&
+                    document.querySelector('#statsProgressPercent')
+                ),
+                role: node?.getAttribute('role') || '',
+                min: node?.getAttribute('aria-valuemin') || '',
+                max: node?.getAttribute('aria-valuemax') || '',
+                hidden: Boolean(node?.hidden),
+                fillTransition: fill ? getComputedStyle(fill).transitionProperty : ''
+              };
+            })(),
+            statsTimeline: Boolean(
+              document.querySelector('#usageTimeline') &&
+                document.querySelector('#timelineRange') &&
+                document.querySelector('[data-i18n="stats.detailsSubtitle"]') &&
+                document.querySelectorAll('[data-timeline-period]').length === 3
+            ),
             statsNav: document.querySelectorAll('.nav-item[data-tab="stats"]').length,
             envState: document.querySelector('#envDeployState')?.textContent,
             redeployVisible: !document.querySelector('#btnRedeploy').hidden,

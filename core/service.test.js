@@ -9,6 +9,16 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 const { Service } = require('./service');
+const {
+  isSafePackageName,
+  isSafePluginSpec,
+  redactSensitiveText,
+  sanitizeApiBindingInput,
+  sanitizeExternalUrl,
+  sanitizeRendererConfigPatch,
+  sanitizeStoredServiceConfig,
+  stripSensitiveConfig
+} = require('./security');
 
 function sh(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts });
@@ -75,6 +85,23 @@ async function main() {
   svc.setConfig({ checkout, port: PORT, startCommand: [process.execPath, 'server.js'] });
   svc.on('log', e => console.log(`  [${e.level}] ${e.line}`));
   const results = {};
+  results.securityValidation = Boolean(
+    sanitizeExternalUrl('https://platform.deepseek.com/api_keys') &&
+    !sanitizeExternalUrl('file:///C:/Windows/System32/calc.exe') &&
+    !sanitizeExternalUrl('https://user:password@example.com/') &&
+    sanitizeApiBindingInput({ baseURL: 'http://127.0.0.1:8080/v1', apiKey: 'local-test-key' }).ok &&
+    !sanitizeApiBindingInput({ baseURL: 'http://example.com/v1', apiKey: 'unsafe-test-key' }).ok &&
+    sanitizeRendererConfigPatch({ language: 'en-US' }).ok &&
+    !sanitizeRendererConfigPatch({ startCommand: ['cmd', '/c', 'calc'] }).ok &&
+    isSafePluginSpec('@deepseek-ai/dsh-example@1.2.3') &&
+    !isSafePluginSpec('example&calc.exe') &&
+    isSafePackageName('@deepseek-ai/dsh-example') &&
+    !isSafePackageName('example & calc') &&
+    !redactSensitiveText('DEEPSEEK_API_KEY=sk-example-not-real-123456').includes('not-real') &&
+    !Object.hasOwn(stripSensitiveConfig({ language: 'en-US', accidentalApiKey: 'do-not-save' }), 'accidentalApiKey') &&
+    !Object.hasOwn(sanitizeStoredServiceConfig({ language: 'en-US', startCommand: ['cmd', '/c', 'calc'] }), 'startCommand') &&
+    !Object.hasOwn(sanitizeStoredServiceConfig({ language: 'en-US', deployUrl: 'https://evil.example/repo.git' }), 'deployUrl')
+  );
 
   // 已有 Harness 目录：识别、绑定并读取版本 / Git 信息；普通 Node 项目必须拒绝
   const bindSvc = new Service({ configPath: path.join(base, 'bind-config.json') });
@@ -159,19 +186,25 @@ async function main() {
   console.log('[test] API 绑定…');
   const dshHome = path.join(base, 'fake-dsh');
   const svc4 = new Service({ configPath: path.join(base, 'config4.json') });
-  svc4.setConfig({ dshHome, apiPlatformUrl: 'https://platform.deepseek.com/api_keys' });
+  const testApiKey = 'unit-test-credential-123456';
+  svc4.setConfig({ dshHome, apiPlatformUrl: 'https://platform.deepseek.com/api_keys', accidentalApiKey: testApiKey });
+  results.configSecretExcluded = !fs.readFileSync(path.join(base, 'config4.json'), 'utf8').includes(testApiKey);
   const before = await svc4.getApiBinding();
   results.apiBefore = { bound: before.bound };
-  const rApi = await svc4.saveApiBinding({ baseURL: 'https://api.deepseek.com', apiKey: 'sk-test-secret-123456', platformUrl: 'https://platform.deepseek.com/api_keys' });
+  const invalidApi = await svc4.saveApiBinding({ baseURL: 'file:///unsafe', apiKey: testApiKey, platformUrl: 'javascript:alert(1)' });
+  results.apiRejectsUnsafeUrl = invalidApi.ok === false;
+  const rApi = await svc4.saveApiBinding({ baseURL: 'https://api.deepseek.com', apiKey: testApiKey, platformUrl: 'https://platform.deepseek.com/api_keys' });
   results.apiSave = { ok: rApi.ok, bound: rApi.bound };
-  results.apiMasked = rApi.apiKeyMasked === 'sk-****3456';
+  results.apiMasked = rApi.apiKeyMasked === '••••3456';
   const settingsText = fs.readFileSync(path.join(dshHome, 'settings.yaml'), 'utf8');
   const credText = fs.readFileSync(path.join(dshHome, '.credentials.yaml'), 'utf8');
-  results.apiSettings = settingsText.includes('sk-test-secret-123456') && settingsText.includes('https://api.deepseek.com');
-  results.apiCredentials = credText.includes('DEEPSEEK_API_KEY: sk-test-secret-123456');
+  results.apiSettings = settingsText.includes(testApiKey) && settingsText.includes('https://api.deepseek.com');
+  results.apiCredentials = credText.includes(`DEEPSEEK_API_KEY: ${testApiKey}`);
   // 读取回环（不泄露明文）
   const after = await svc4.getApiBinding();
-  results.apiRead = after.bound && after.apiKeyMasked === 'sk-****3456' && after.baseURL === 'https://api.deepseek.com';
+  results.apiRead = after.bound && after.apiKeyMasked === '••••3456' && after.baseURL === 'https://api.deepseek.com/';
+  svc4._log('warn', `accidental output: ${testApiKey}`);
+  results.apiLogRedacted = !svc4.getLogs().at(-1).line.includes(testApiKey) && svc4.getLogs().at(-1).line.includes('[REDACTED]');
 
   // 7) Token 统计（合成会话：明文 jsonl + zstd 压缩各一个，验证聚合/命中率/费用）
   console.log('[test] Token 统计…');
@@ -179,24 +212,26 @@ async function main() {
   const sr = path.join(statsHome, 'sessions', '--tmp--');
   fs.mkdirSync(path.join(sr, 'session-a'), { recursive: true });
   fs.mkdirSync(path.join(sr, 'session-b'), { recursive: true });
-  const mkRecs = (model, u1, u2) => [
+  const mkRecs = (model, u1, u2, day) => [
     { type: 'session', id: 'x' },
     { type: 'turn/start', data: {} },
     { type: 'step/start', data: {} },
     { type: 'user/message', data: {} },
     { type: 'request/context', data: { model } },
-    { type: 'assistant/message', data: { usage: u1 } },
+    { type: 'assistant/message', time: new Date(`${day}T09:00:00`).getTime(), data: { usage: u1 } },
     { type: 'assistant/chunk', data: { chunk: { type: 'usage', usage: u1 } } }, // 应被忽略，防重复计数
     { type: 'tool/call', data: {} },
-    { type: 'assistant/message', data: { usage: u2 } }
+    { type: 'assistant/message', time: new Date(`${day}T10:00:00`).getTime(), data: { usage: u2 } }
   ].map(r => JSON.stringify(r)).join('\n') + '\n';
   fs.writeFileSync(path.join(sr, 'session-a', 'session.jsonl'),
-    mkRecs('deepseek-chat', { inputTokens: 100, outputTokens: 50, cacheReadTokens: 200, reasoningTokens: 10 }, { inputTokens: 10, outputTokens: 5 }));
+    mkRecs('deepseek-chat', { inputTokens: 100, outputTokens: 50, cacheReadTokens: 200, reasoningTokens: 10 }, { inputTokens: 10, outputTokens: 5 }, '2026-08-16'));
   const zlib = require('node:zlib');
   fs.writeFileSync(path.join(sr, 'session-b', 'session.jsonl.zstd'),
-    zlib.zstdCompressSync(Buffer.from(mkRecs('deepseek-reasoner', { inputTokens: 10, outputTokens: 5, cacheReadTokens: 20 }, { inputTokens: 20, outputTokens: 15, cacheWriteTokens: 4 }))));
+    zlib.zstdCompressSync(Buffer.from(mkRecs('deepseek-reasoner', { inputTokens: 10, outputTokens: 5, cacheReadTokens: 20 }, { inputTokens: 20, outputTokens: 15, cacheWriteTokens: 4 }, '2026-08-17'))));
   const svc5 = new Service({ configPath: path.join(base, 'config5.json') });
   svc5.setConfig({ dshHome: statsHome });
+  const statsProgress = [];
+  svc5.on('stats-progress', progress => statsProgress.push(progress));
   const stats = await svc5.getStats({ force: true });
   results.stats = {
     sessions: stats.sessions, turns: stats.turns, steps: stats.steps, userMessages: stats.userMessages,
@@ -212,7 +247,31 @@ async function main() {
   results.hitRate = stats.hitRate;
   results.hitRateOk = Math.abs(stats.hitRate - 220 / 364) < 1e-9;
   results.statsCostOk = stats.cost > 0 && stats.models.length === 2;
-  results.statsCache = (await svc5.getStats()).updatedAt === stats.updatedAt; // 15s 缓存命中
+  results.statsTimeline = stats.timeline.length === 4 &&
+    stats.timeline[0].time === '2026-08-16T09:00' && stats.timeline[0].calls === 1 && stats.timeline[0].totalTokens === 360 &&
+    stats.timeline[1].time === '2026-08-16T10:00' && stats.timeline[1].calls === 1 && stats.timeline[1].totalTokens === 15 &&
+    stats.timeline[2].time === '2026-08-17T09:00' && stats.timeline[2].totalTokens === 35 &&
+    stats.timeline[3].time === '2026-08-17T10:00' && stats.timeline[3].totalTokens === 39;
+  results.statsProgress = statsProgress[0]?.phase === 'scanning' &&
+    statsProgress.some(progress => progress.phase === 'processing' && progress.total === 2) &&
+    statsProgress.at(-1)?.phase === 'done' && statsProgress.at(-1)?.percent === 100;
+  results.statsCache = (await svc5.getStats()).updatedAt === stats.updatedAt; // 60s 内存缓存命中
+  const cachedStats = await svc5.getStats({ force: true });
+  results.statsIncrementalCache = cachedStats.cache.hits === 2 && cachedStats.cache.parsed === 0 &&
+    cachedStats.totalTokens === stats.totalTokens;
+  fs.appendFileSync(path.join(sr, 'session-a', 'session.jsonl'),
+    JSON.stringify({ type: 'assistant/message', data: { usage: { inputTokens: 1, outputTokens: 2 } } }) + '\n');
+  const changedStats = await svc5.getStats({ force: true });
+  results.statsIncrementalUpdate = changedStats.cache.hits === 1 && changedStats.cache.parsed === 1 &&
+    changedStats.llmCalls === 5 && changedStats.totalTokens === 452;
+  fs.rmSync(path.join(sr, 'session-b', 'session.jsonl.zstd'));
+  const deletedStats = await svc5.getStats({ force: true });
+  results.statsIncrementalDelete = deletedStats.sessions === 1 && deletedStats.cache.hits === 1 &&
+    deletedStats.cache.parsed === 0 && deletedStats.totalTokens === 378;
+  fs.writeFileSync(path.join(base, 'config5-stats-cache-v1.json'), '{invalid-cache');
+  const recoveredStats = await svc5.getStats({ force: true });
+  results.statsCacheRecovery = recoveredStats.sessions === 1 && recoveredStats.cache.hits === 0 &&
+    recoveredStats.cache.parsed === 1 && recoveredStats.totalTokens === 378;
 
   // 8) 插件管理（getPlugins 解析 profile manifest）
   console.log('[test] 插件…');
@@ -275,16 +334,18 @@ async function main() {
   await removeTestDirectory(base);
 
   console.log('RESULT ' + JSON.stringify(results));
-  const pass = results.bindExisting && results.bindRejectsInvalid &&
+  const pass = results.securityValidation && results.bindExisting && results.bindRejectsInvalid &&
     results.start.ok && !results.start.already && results.statusRunning &&
     results.checkUpdate.ok && results.checkUpdate.behind === 1 && results.checkUpdate.ahead === 0 &&
     results.stop.ok && results.portFree && results.update.ok && results.versionApplied &&
     results.deploy.ok && results.deployCheckout && results.deployNpmrc &&
     results.deployAlready && results.deployNotEmpty &&
     results.redeploy.ok && results.redeployFresh && results.redeployStore &&
-    results.apiSave.ok && results.apiSave.bound && results.apiMasked &&
+    results.apiSave.ok && results.apiSave.bound && results.apiMasked && results.configSecretExcluded &&
+    results.apiRejectsUnsafeUrl && results.apiLogRedacted &&
     results.apiSettings && results.apiCredentials && results.apiRead && !results.apiBefore.bound &&
-    results.statsOk && results.hitRateOk && results.statsCostOk && results.statsCache &&
+    results.statsOk && results.hitRateOk && results.statsCostOk && results.statsTimeline && results.statsProgress && results.statsCache &&
+    results.statsIncrementalCache && results.statsIncrementalUpdate && results.statsIncrementalDelete && results.statsCacheRecovery &&
     results.pluginsOk && results.pluginsUninit &&
     results.mirrorOk && results.i18n;
   console.log(pass ? 'ALL PASS ✅' : 'TEST FAILED ❌');

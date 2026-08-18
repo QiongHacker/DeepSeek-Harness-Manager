@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ZSTD_MAGIC = 0xFD2FB528;
+const CACHE_VERSION = 3;
 
 // DeepSeek 公开定价（USD / 每百万 tokens，估算用；可在配置 apiPricing 中覆盖）
 const DEFAULT_PRICING = {
@@ -61,9 +62,8 @@ function readSessionFile(filePath) {
       const zlib = require('node:zlib');
       const frames = zstdFrames(buf);
       if (!frames.length) return null;
-      let plain = Buffer.alloc(0);
-      for (const f of frames) plain = Buffer.concat([plain, zlib.zstdDecompressSync(buf.subarray(f.start, f.end))]);
-      return plain.toString('utf8');
+      const chunks = frames.map(f => zlib.zstdDecompressSync(buf.subarray(f.start, f.end)));
+      return Buffer.concat(chunks).toString('utf8');
     }
     return fs.readFileSync(filePath, 'utf8');
   } catch { return null; }
@@ -79,60 +79,197 @@ function collectSessionFiles(dir, out) {
   }
 }
 
-/**
- * 聚合统计。maxBytes 限制本次扫描的解压字节总量，避免超大会话拖垮性能。
- */
-function computeStats({ dshHome, pricing = DEFAULT_PRICING, maxBytes = 256 * 1024 * 1024 } = {}) {
+function loadStatsCache(cachePath, sessionsRoot) {
+  if (!cachePath) return { entries: {} };
+  try {
+    const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    if (cached.version !== CACHE_VERSION || cached.sessionsRoot !== sessionsRoot || !cached.entries || typeof cached.entries !== 'object') {
+      return { entries: {} };
+    }
+    return cached;
+  } catch { return { entries: {} }; }
+}
+
+function saveStatsCache(cachePath, sessionsRoot, entries) {
+  if (!cachePath) return;
+  const dir = path.dirname(cachePath);
+  const tempPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(tempPath, JSON.stringify({ version: CACHE_VERSION, sessionsRoot, entries }));
+    try {
+      fs.renameSync(tempPath, cachePath);
+    } catch {
+      fs.rmSync(cachePath, { force: true });
+      fs.renameSync(tempPath, cachePath);
+    }
+  } catch {
+    try { fs.rmSync(tempPath, { force: true }); } catch { /* ignore cache cleanup errors */ }
+  }
+}
+
+function eventTimestamp(event, fallbackTimestamp) {
+  const data = event && event.data;
+  const candidates = [
+    event && event.timestamp, event && event.createdAt, event && event.time, event && event.ts,
+    data && data.timestamp, data && data.createdAt, data && data.time, data && data.ts
+  ];
+  for (const value of candidates) {
+    if (value == null || value === '') continue;
+    let timestamp;
+    if (typeof value === 'number') timestamp = value < 1e12 ? value * 1000 : value;
+    else if (/^\d+(?:\.\d+)?$/.test(String(value))) {
+      const numeric = Number(value);
+      timestamp = numeric < 1e12 ? numeric * 1000 : numeric;
+    } else timestamp = Date.parse(value);
+    if (Number.isFinite(timestamp)) return timestamp;
+  }
+  return fallbackTimestamp;
+}
+
+function localHourKey(timestamp) {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return null;
+  const pad = value => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`;
+}
+
+function parseSessionFile(filePath, fallbackTimestamp = Date.now()) {
+  const plain = readSessionFile(filePath);
+  if (!plain) return null;
+
   const zero = () => ({ input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0 });
   const n = v => (Number.isFinite(v) && v > 0) ? v : 0;
+  const addRec = (a, b) => { for (const k of Object.keys(a)) a[k] += b[k] || 0; };
+  const summary = {
+    plainBytes: Buffer.byteLength(plain), sessions: 1, turns: 0, steps: 0,
+    userMessages: 0, toolCalls: 0, llmCalls: 0, tokens: zero(), models: {}, timeline: {}
+  };
+  const modelOf = model => summary.models[model] || (summary.models[model] = { calls: 0, tokens: zero() });
+  const hourOf = hour => summary.timeline[hour] || (summary.timeline[hour] = { calls: 0, tokens: zero() });
+  let currentModel = null;
+  let start = 0;
+
+  while (start < plain.length) {
+    const newline = plain.indexOf('\n', start);
+    const end = newline === -1 ? plain.length : newline;
+    const line = plain.slice(start, end);
+    start = newline === -1 ? plain.length : newline + 1;
+    if (!line) continue;
+
+    let j;
+    try { j = JSON.parse(line); } catch { continue; }
+    switch (j.type) {
+      case 'turn/start': summary.turns++; break;
+      case 'step/start': summary.steps++; break;
+      case 'user/message': summary.userMessages++; break;
+      case 'tool/call': summary.toolCalls++; break;
+      case 'request/context':
+        if (j.data && j.data.model) { currentModel = j.data.model; modelOf(currentModel); }
+        break;
+      case 'assistant/message': {
+        const u = j.data && j.data.usage;
+        if (!u) break;
+        summary.llmCalls++;
+        const rec = {
+          input: n(u.inputTokens), cacheRead: n(u.cacheReadTokens), cacheWrite: n(u.cacheWriteTokens),
+          output: n(u.outputTokens), reasoning: n(u.reasoningTokens)
+        };
+        addRec(summary.tokens, rec);
+        const model = modelOf(currentModel || 'unknown');
+        model.calls++;
+        addRec(model.tokens, rec);
+        const hour = localHourKey(eventTimestamp(j, fallbackTimestamp));
+        if (hour) {
+          const timelineHour = hourOf(hour);
+          timelineHour.calls++;
+          addRec(timelineHour.tokens, rec);
+        }
+        break;
+      }
+    }
+  }
+  return summary;
+}
+
+/**
+ * 聚合统计。历史文件按 size + mtime 复用持久化摘要，仅解析新增或变化的文件。
+ * maxBytes 限制本次聚合的解压字节总量，避免超大会话拖垮性能。
+ */
+function computeStats({ dshHome, pricing = DEFAULT_PRICING, maxBytes = 256 * 1024 * 1024, cachePath, onProgress } = {}) {
+  const zero = () => ({ input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0 });
   const addRec = (a, b) => { for (const k of Object.keys(a)) a[k] += b[k] || 0; };
   const sumTokens = t => t.input + t.cacheRead + t.cacheWrite + t.output + t.reasoning;
   const computeCost = (t, price) => (t.input * price.input + t.cacheRead * price.cacheRead +
     t.cacheWrite * price.cacheWrite + (t.output + t.reasoning) * price.output) / 1e6;
+  const progress = payload => {
+    if (typeof onProgress === 'function') {
+      try { onProgress(payload); } catch { /* progress reporting must not stop aggregation */ }
+    }
+  };
 
   const sessionsRoot = path.join(dshHome, 'sessions');
   const files = [];
+  progress({ phase: 'scanning', percent: 0, processed: 0, total: 0, hits: 0, parsed: 0 });
   collectSessionFiles(sessionsRoot, files);
+  files.sort();
+  const previousCache = loadStatsCache(cachePath, sessionsRoot);
+  const nextEntries = {};
 
   const agg = {
     sessions: 0, turns: 0, steps: 0, userMessages: 0, toolCalls: 0, llmCalls: 0,
-    tokens: zero(), models: {}, truncated: false
+    tokens: zero(), models: {}, timeline: {}, truncated: false
   };
   const modelOf = m => agg.models[m] || (agg.models[m] = { calls: 0, tokens: zero() });
-  let currentModel = null;
+  const hourOf = hour => agg.timeline[hour] || (agg.timeline[hour] = { calls: 0, tokens: zero() });
   let plainBytes = 0;
+  let cacheHits = 0;
+  let parsedFiles = 0;
+  let processedFiles = 0;
+  let lastPercent = -1;
+  progress({ phase: 'processing', percent: files.length ? 5 : 95, processed: 0, total: files.length, hits: 0, parsed: 0 });
+  const reportFileProcessed = () => {
+    processedFiles++;
+    const percent = 5 + Math.round(processedFiles / files.length * 90);
+    if (percent !== lastPercent) {
+      lastPercent = percent;
+      progress({ phase: 'processing', percent, processed: processedFiles, total: files.length, hits: cacheHits, parsed: parsedFiles });
+    }
+  };
 
   for (const f of files) {
-    const plain = readSessionFile(f);
-    if (!plain) continue;
-    plainBytes += plain.length;
+    let stat;
+    try { stat = fs.statSync(f); } catch { reportFileProcessed(); continue; }
+    const cached = previousCache.entries[f];
+    let summary;
+    if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs && cached.summary) {
+      summary = cached.summary;
+      cacheHits++;
+    } else {
+      summary = parseSessionFile(f, stat.mtimeMs);
+      parsedFiles++;
+    }
+    if (!summary) { reportFileProcessed(); continue; }
+    nextEntries[f] = { size: stat.size, mtimeMs: stat.mtimeMs, summary };
+    plainBytes += summary.plainBytes || 0;
+    reportFileProcessed();
     if (plainBytes > maxBytes) { agg.truncated = true; break; }
-    agg.sessions++;
-    for (const line of plain.split('\n')) {
-      if (!line) continue;
-      let j;
-      try { j = JSON.parse(line); } catch { continue; }
-      switch (j.type) {
-        case 'turn/start': agg.turns++; break;
-        case 'step/start': agg.steps++; break;
-        case 'user/message': agg.userMessages++; break;
-        case 'tool/call': agg.toolCalls++; break;
-        case 'request/context':
-          if (j.data && j.data.model) { currentModel = j.data.model; modelOf(currentModel); }
-          break;
-        case 'assistant/message': {
-          const u = j.data && j.data.usage;
-          if (!u) break;
-          agg.llmCalls++;
-          const rec = { input: n(u.inputTokens), cacheRead: n(u.cacheReadTokens), cacheWrite: n(u.cacheWriteTokens), output: n(u.outputTokens), reasoning: n(u.reasoningTokens) };
-          addRec(agg.tokens, rec);
-          const m = modelOf(currentModel || 'unknown');
-          m.calls++; addRec(m.tokens, rec);
-          break;
-        }
-      }
+
+    for (const key of ['sessions', 'turns', 'steps', 'userMessages', 'toolCalls', 'llmCalls']) agg[key] += summary[key] || 0;
+    addRec(agg.tokens, summary.tokens || {});
+    for (const [modelName, modelSummary] of Object.entries(summary.models || {})) {
+      const model = modelOf(modelName);
+      model.calls += modelSummary.calls || 0;
+      addRec(model.tokens, modelSummary.tokens || {});
+    }
+    for (const [hour, hourSummary] of Object.entries(summary.timeline || {})) {
+      const timelineHour = hourOf(hour);
+      timelineHour.calls += hourSummary.calls || 0;
+      addRec(timelineHour.tokens, hourSummary.tokens || {});
     }
   }
+  progress({ phase: 'saving', percent: 98, processed: processedFiles, total: files.length, hits: cacheHits, parsed: parsedFiles });
+  saveStatsCache(cachePath, sessionsRoot, nextEntries);
 
   const totalTokens = sumTokens(agg.tokens);
   const billedInput = agg.tokens.input + agg.tokens.cacheRead + agg.tokens.cacheWrite;
@@ -144,6 +281,13 @@ function computeStats({ dshHome, pricing = DEFAULT_PRICING, maxBytes = 256 * 102
     totalTokens: sumTokens(m.tokens),
     cost: computeCost(m.tokens, pricing[model] || pricing['*'])
   })).sort((a, b) => b.totalTokens - a.totalTokens);
+  const timeline = Object.entries(agg.timeline).map(([time, hour]) => ({
+    time,
+    calls: hour.calls,
+    tokens: hour.tokens,
+    totalTokens: sumTokens(hour.tokens)
+  })).sort((a, b) => a.time.localeCompare(b.time));
+  progress({ phase: 'done', percent: 100, processed: processedFiles, total: files.length, hits: cacheHits, parsed: parsedFiles });
 
   return {
     updatedAt: Date.now(),
@@ -152,8 +296,9 @@ function computeStats({ dshHome, pricing = DEFAULT_PRICING, maxBytes = 256 * 102
     userMessages: agg.userMessages, toolCalls: agg.toolCalls, llmCalls: agg.llmCalls,
     tokens: agg.tokens, totalTokens, hitRate,
     cost: computeCost(agg.tokens, pricing['*']),
-    models, estimated: true, truncated: agg.truncated
+    models, timeline, estimated: true, truncated: agg.truncated,
+    cache: { files: files.length, hits: cacheHits, parsed: parsedFiles }
   };
 }
 
-module.exports = { computeStats, DEFAULT_PRICING, zstdFrames };
+module.exports = { computeStats, DEFAULT_PRICING, zstdFrames, parseSessionFile };
