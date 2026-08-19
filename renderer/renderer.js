@@ -11,7 +11,7 @@ const THEME_KEY = 'dsh-manager-theme';
 const I18N = {
   'zh-CN': {
     'brand.subtitle': 'DeepSeek Harness 管理器',
-    'nav.overview': '概览', 'nav.update': '版本更新', 'nav.settings': '设置',
+    'nav.overview': '概览', 'nav.update': '版本管理', 'nav.settings': '设置',
     'nav.stats': 'Token 统计', 'nav.plugins': '插件', 'nav.logs': '运行日志',
     'sidebar.statusTitle': 'Harness 运行状态', 'sidebar.quitTitle': '退出管理器（不影响 Harness 运行）',
     'common.quit': '退出', 'common.save': '保存', 'common.start': '启动', 'common.stop': '停止',
@@ -23,10 +23,18 @@ const I18N = {
     'deploy.redeployTitle': '停止服务并重新克隆部署', 'deploy.status': '部署状态',
     'deploy.directory': '部署目录', 'deploy.download': '一键下载并部署',
     'deploy.bindExisting': '绑定已有 Harness',
-    'update.title': '版本更新', 'update.subtitle': '从 GitHub 拉取最新代码，依赖变化时自动安装',
+    'update.title': '版本管理', 'update.subtitle': '选择 Harness 版本、切换到指定版本，或回滚上一次切换',
     'update.currentVersion': '当前版本', 'update.currentCommit': '当前提交', 'update.servicePort': '服务端口',
-    'update.check': '检查更新', 'update.now': '立即更新', 'update.hint': '点击「检查更新」查看是否有新版本',
-    'update.note': '更新流程：获取实际上游分支并快进 → （若 lockfile 变化）安装依赖 → 若服务运行中自动重启。',
+    'update.availableVersions': '可用版本', 'update.loadFirst': '请先刷新版本列表', 'update.refresh': '刷新版本',
+    'update.switch': '切换到所选版本', 'update.rollback': '回滚上一版本',
+    'update.hint': '刷新后可选择远程标签或近期提交',
+    'update.note': '切换前会检查未提交修改；依赖变化时按锁文件安装。失败会恢复原提交，运行中的 Harness 会在切换后自动重启。',
+    'update.kindLatest': '上游最新', 'update.kindTag': '正式标签', 'update.kindCommit': '近期提交', 'update.kindCurrent': '当前版本',
+    'update.currentSuffix': '当前', 'update.loading': '正在读取远程版本…',
+    'update.loaded': '已加载 {count} 个版本；请选择目标版本',
+    'update.loadedRollback': '已加载 {count} 个版本；可回滚到 {version} @ {head}',
+    'update.switching': '正在切换版本…', 'update.rollingBack': '正在回滚上一版本…',
+    'update.noRollback': '暂无可回滚的历史版本', 'update.loadFailed': '版本列表读取失败',
     'settings.title': '设置', 'settings.subtitle': '配置 Harness 安装目录与启动行为',
     'settings.harnessDir': 'Harness 目录', 'settings.pathPlaceholder': '例如 C:\\Users\\你的用户名\\deepseek-harness',
     'settings.bindPath': '验证并绑定', 'settings.choosePath': '选择目录',
@@ -45,8 +53,8 @@ const I18N = {
     'api.deepseek': 'DeepSeek（默认）', 'api.custom': '自定义（OpenAI 兼容）', 'api.platform': '管理平台',
     'api.openPlatform': '打开平台', 'api.save': '保存 API',
     'api.hint': 'API Key 将写入 ~/.dsh（Harness 官方配置，运行中即刻生效）', 'api.toggleKey': '显示/隐藏',
-    'about.basedOn': '基于 Electron', 'about.description': 'DeepSeek Harness 图形化管理器：一键启动 / 停止 / 版本更新。',
-    'about.note': '更新功能作用于 Harness 源码仓库；管理器自身不自动更新。',
+    'about.basedOn': '基于 Electron', 'about.description': 'DeepSeek Harness 图形化管理器：一键启动 / 停止 / 版本管理。',
+    'about.note': '版本管理作用于 Harness 源码仓库；管理器自身不自动更新。',
     'stats.title': 'Token 统计', 'stats.subtitle': '基于会话日志聚合的用量与计费估算',
     'stats.totalTokens': '总 Token', 'stats.hitRate': '缓存命中率', 'stats.cost': '计费估算 (USD)',
     'stats.llmCalls': 'LLM 调用', 'stats.composition': 'Token 构成', 'stats.details': '用量明细',
@@ -62,11 +70,11 @@ const I18N = {
     'plugins.specPlaceholder': '例如 @deepseek-ai/dsh-xxx（仅安装你信任的来源）', 'plugins.install': '安装',
     'plugins.note': '安全提示：插件属于可执行代码，运行后可能读取 Harness API Key。只安装你审查并信任的 npm/Git 来源；安装/卸载后需重启 Harness。',
     'plugins.installed': '已安装插件',
-    'logs.title': '运行日志', 'logs.subtitle': '启动 / 停止 / 更新过程的实时输出', 'logs.autoScroll': '自动滚动',
+    'logs.title': '运行日志', 'logs.subtitle': '启动 / 停止 / 版本切换过程的实时输出', 'logs.autoScroll': '自动滚动',
     'theme.switchLight': '切换到浅色模式', 'theme.switchDark': '切换到深色模式',
     'theme.light': '浅色', 'theme.dark': '深色', 'language.switch': 'Switch to English', 'language.label': 'EN',
     'status.running': '运行中', 'status.runningExternal': '运行中 · 外部实例', 'status.starting': '启动中…',
-    'status.stopping': '停止中…', 'status.updating': '更新中…', 'status.deploying': '部署中…',
+    'status.stopping': '停止中…', 'status.updating': '版本切换中…', 'status.deploying': '部署中…',
     'status.stopped': '已停止', 'status.unknown': '未知', 'status.checking': '检测中…',
     'deploy.deployed': '已部署 · 版本 {version} @ {head}', 'deploy.notDeployed': '未部署',
     'deploy.warnNotDeployed': '尚未连接 Harness。电脑中已有 Harness 可直接选择目录绑定；否则点击「一键下载并部署」。首次部署需要联网。',
@@ -109,14 +117,15 @@ const I18N = {
     'toast.harnessExists': 'Harness 已存在', 'toast.deployFailed': '部署失败：{reason}',
     'toast.envCheckFailed': '环境检查失败', 'toast.nodeTooOld': 'Node.js 版本过低', 'toast.harnessNotDeployed': 'Harness 未部署',
     'toast.envIssues': '环境检查：{missing}', 'toast.envPassed': '✅ 环境检查通过',
-    'update.checking': '正在检查…', 'update.found': '发现 {count} 个新提交（{local} → {remote}）',
-    'toast.newVersion': '发现新版本，可点击「立即更新」', 'update.latest': '已是最新（{head}）',
-    'toast.latest': '✅ 已是最新版本', 'update.checkFailed': '检查失败', 'toast.updateCheckFailed': '检查更新失败，请查看日志',
-    'update.updating': '更新中…', 'toast.updateRestarting': '更新完成，正在重启服务…',
-    'toast.updateRestarted': '✅ 更新并重启成功', 'toast.restartFailed': '重启失败，请手动点击启动',
-    'toast.updated': '✅ 更新完成', 'toast.updateFailed': '更新失败，请查看日志',
+    'toast.restartFailed': '重启失败，请手动点击启动',
+    'confirm.versionSwitch': '切换到 {version} @ {head}？\n\n运行中的 Harness 会先停止，成功后自动重启。',
+    'confirm.versionRollback': '回滚到 {version} @ {head}？\n\n运行中的 Harness 会先停止，成功后自动重启。',
+    'toast.versionSwitched': '✅ 已切换到 {version} @ {head}', 'toast.versionRolledBack': '✅ 已回滚到 {version} @ {head}',
+    'toast.versionRestarted': '✅ 版本切换并重启成功', 'toast.versionDirty': '检测到未提交的源码修改，请先提交或还原后再切换',
+    'toast.versionNotFound': '所选版本已不存在，请刷新版本列表', 'toast.noRollback': '暂无可回滚的历史版本',
+    'toast.versionFailed': '版本操作失败：{reason}',
     'toast.bindSuccess': '✅ 已绑定 Harness {version}：{path}',
-    'toast.bindNonGit': '已绑定并可启动，但该目录不是 Git 仓库，无法检查版本更新',
+    'toast.bindNonGit': '已绑定并可启动，但该目录不是 Git 仓库，无法使用版本管理',
     'toast.bindInvalid': '所选目录不是有效的 DeepSeek Harness 源码目录',
     'toast.bindNotFound': '目录不存在或无法访问', 'toast.bindRunning': '请先停止当前 Harness，再切换绑定目录',
     'toast.bindFailed': '绑定失败：{reason}', 'toast.mirrorSaved': '已保存下载镜像：{mirror}',
@@ -131,7 +140,7 @@ const I18N = {
   },
   'en-US': {
     'brand.subtitle': 'DeepSeek Harness Manager',
-    'nav.overview': 'Overview', 'nav.update': 'Updates', 'nav.settings': 'Settings',
+    'nav.overview': 'Overview', 'nav.update': 'Versions', 'nav.settings': 'Settings',
     'nav.stats': 'Token Usage', 'nav.plugins': 'Plugins', 'nav.logs': 'Logs',
     'sidebar.statusTitle': 'Harness status', 'sidebar.quitTitle': 'Quit manager (Harness keeps running)',
     'common.quit': 'Quit', 'common.save': 'Save', 'common.start': 'Start', 'common.stop': 'Stop',
@@ -143,10 +152,18 @@ const I18N = {
     'deploy.redeployTitle': 'Stop the service and clone a fresh deployment', 'deploy.status': 'Status',
     'deploy.directory': 'Directory', 'deploy.download': 'Download & deploy',
     'deploy.bindExisting': 'Bind existing Harness',
-    'update.title': 'Updates', 'update.subtitle': 'Pull the latest code from GitHub and install changed dependencies',
+    'update.title': 'Version Manager', 'update.subtitle': 'Choose a Harness version, switch explicitly, or roll back the previous switch',
     'update.currentVersion': 'Version', 'update.currentCommit': 'Commit', 'update.servicePort': 'Service port',
-    'update.check': 'Check for updates', 'update.now': 'Update now', 'update.hint': 'Check whether a new version is available',
-    'update.note': 'Update flow: fetch and fast-forward from the actual upstream branch → install changed dependencies → restart if running.',
+    'update.availableVersions': 'Available versions', 'update.loadFirst': 'Refresh the version list first', 'update.refresh': 'Refresh versions',
+    'update.switch': 'Switch to selected', 'update.rollback': 'Roll back previous',
+    'update.hint': 'Refresh to choose a remote tag or recent commit',
+    'update.note': 'Tracked changes are checked before switching. Changed dependencies are installed from the lockfile; failures restore the previous commit, and a running Harness restarts afterward.',
+    'update.kindLatest': 'Upstream latest', 'update.kindTag': 'Release tag', 'update.kindCommit': 'Recent commit', 'update.kindCurrent': 'Current version',
+    'update.currentSuffix': 'current', 'update.loading': 'Loading remote versions…',
+    'update.loaded': '{count} version(s) loaded; choose a target',
+    'update.loadedRollback': '{count} version(s) loaded; rollback available to {version} @ {head}',
+    'update.switching': 'Switching version…', 'update.rollingBack': 'Rolling back the previous version…',
+    'update.noRollback': 'No previous version is available for rollback', 'update.loadFailed': 'Unable to load versions',
     'settings.title': 'Settings', 'settings.subtitle': 'Configure the Harness directory and startup behavior',
     'settings.harnessDir': 'Harness directory', 'settings.pathPlaceholder': 'For example C:\\Users\\you\\deepseek-harness',
     'settings.bindPath': 'Validate & bind', 'settings.choosePath': 'Choose folder',
@@ -165,8 +182,8 @@ const I18N = {
     'api.deepseek': 'DeepSeek (default)', 'api.custom': 'Custom (OpenAI compatible)', 'api.platform': 'Platform',
     'api.openPlatform': 'Open platform', 'api.save': 'Save API',
     'api.hint': 'The API key is saved to ~/.dsh and takes effect immediately', 'api.toggleKey': 'Show or hide key',
-    'about.basedOn': 'Built with Electron', 'about.description': 'A graphical manager for starting, stopping, and updating DeepSeek Harness.',
-    'about.note': 'Updates apply to the Harness source checkout; the manager does not update itself.',
+    'about.basedOn': 'Built with Electron', 'about.description': 'A graphical manager for starting, stopping, and managing DeepSeek Harness versions.',
+    'about.note': 'Version management applies to the Harness source checkout; the manager does not update itself.',
     'stats.title': 'Token Usage', 'stats.subtitle': 'Usage and cost estimates aggregated from session logs',
     'stats.totalTokens': 'Total tokens', 'stats.hitRate': 'Cache hit rate', 'stats.cost': 'Estimated cost (USD)',
     'stats.llmCalls': 'LLM calls', 'stats.composition': 'Token breakdown', 'stats.details': 'Usage details',
@@ -182,11 +199,11 @@ const I18N = {
     'plugins.specPlaceholder': 'For example @deepseek-ai/dsh-xxx (trusted sources only)', 'plugins.install': 'Install',
     'plugins.note': 'Security notice: plugins are executable code and may read the Harness API key. Install only reviewed npm/Git sources you trust. Restart Harness after changes.',
     'plugins.installed': 'Installed plugins',
-    'logs.title': 'Runtime Logs', 'logs.subtitle': 'Live output from start, stop, update, and deployment operations', 'logs.autoScroll': 'Auto-scroll',
+    'logs.title': 'Runtime Logs', 'logs.subtitle': 'Live output from start, stop, version switching, and deployment', 'logs.autoScroll': 'Auto-scroll',
     'theme.switchLight': 'Switch to light mode', 'theme.switchDark': 'Switch to dark mode',
     'theme.light': 'Light', 'theme.dark': 'Dark', 'language.switch': '切换到中文', 'language.label': '中',
     'status.running': 'Running', 'status.runningExternal': 'Running · external instance', 'status.starting': 'Starting…',
-    'status.stopping': 'Stopping…', 'status.updating': 'Updating…', 'status.deploying': 'Deploying…',
+    'status.stopping': 'Stopping…', 'status.updating': 'Switching version…', 'status.deploying': 'Deploying…',
     'status.stopped': 'Stopped', 'status.unknown': 'Unknown', 'status.checking': 'Checking…',
     'deploy.deployed': 'Deployed · version {version} @ {head}', 'deploy.notDeployed': 'Not deployed',
     'deploy.warnNotDeployed': 'Harness is not connected. Bind an existing Harness folder, or download and deploy a new copy. Internet access is required for a new deployment.',
@@ -229,14 +246,15 @@ const I18N = {
     'toast.harnessExists': 'Harness is already deployed', 'toast.deployFailed': 'Deployment failed: {reason}',
     'toast.envCheckFailed': 'Environment check failed', 'toast.nodeTooOld': 'Node.js is too old', 'toast.harnessNotDeployed': 'Harness is not deployed',
     'toast.envIssues': 'Environment check: {missing}', 'toast.envPassed': '✅ Environment check passed',
-    'update.checking': 'Checking…', 'update.found': '{count} new commit(s) found ({local} → {remote})',
-    'toast.newVersion': 'A new version is available. Select “Update now”.', 'update.latest': 'Up to date ({head})',
-    'toast.latest': '✅ Already up to date', 'update.checkFailed': 'Check failed', 'toast.updateCheckFailed': 'Unable to check for updates. See the logs.',
-    'update.updating': 'Updating…', 'toast.updateRestarting': 'Update complete. Restarting Harness…',
-    'toast.updateRestarted': '✅ Updated and restarted', 'toast.restartFailed': 'Restart failed. Start Harness manually.',
-    'toast.updated': '✅ Update complete', 'toast.updateFailed': 'Update failed. Check the logs.',
+    'toast.restartFailed': 'Restart failed. Start Harness manually.',
+    'confirm.versionSwitch': 'Switch to {version} @ {head}?\n\nA running Harness will stop first and restart after a successful switch.',
+    'confirm.versionRollback': 'Roll back to {version} @ {head}?\n\nA running Harness will stop first and restart after a successful rollback.',
+    'toast.versionSwitched': '✅ Switched to {version} @ {head}', 'toast.versionRolledBack': '✅ Rolled back to {version} @ {head}',
+    'toast.versionRestarted': '✅ Version switched and Harness restarted', 'toast.versionDirty': 'Tracked source changes are not committed. Commit or restore them before switching.',
+    'toast.versionNotFound': 'The selected version is no longer available. Refresh the list.', 'toast.noRollback': 'No previous version is available for rollback',
+    'toast.versionFailed': 'Version operation failed: {reason}',
     'toast.bindSuccess': '✅ Harness {version} bound: {path}',
-    'toast.bindNonGit': 'Harness is bound and can be started, but version updates require a Git checkout',
+    'toast.bindNonGit': 'Harness is bound and can be started, but version management requires a Git checkout',
     'toast.bindInvalid': 'The selected folder is not a valid DeepSeek Harness source checkout',
     'toast.bindNotFound': 'The folder does not exist or cannot be accessed', 'toast.bindRunning': 'Stop the current Harness before switching folders',
     'toast.bindFailed': 'Unable to bind: {reason}', 'toast.mirrorSaved': 'Download mirror saved: {mirror}',
@@ -276,7 +294,11 @@ const els = {
   envDeployState: $('#envDeployState'), envPath: $('#envPath'), envWarn: $('#envWarn'),
   prereqGit: $('#prereqGit'), prereqNode: $('#prereqNode'), prereqPnpm: $('#prereqPnpm'),
   btnDeploy: $('#btnDeploy'), btnBindExisting: $('#btnBindExisting'), btnRedeploy: $('#btnRedeploy'), btnEnvCheck: $('#btnEnvCheck'),
-  btnCheck: $('#btnCheck'), btnUpdate: $('#btnUpdate'), updateHint: $('#updateHint'),
+  versionSelect: $('#versionSelect'), btnVersionRefresh: $('#btnVersionRefresh'),
+  btnVersionSwitch: $('#btnVersionSwitch'), btnVersionRollback: $('#btnVersionRollback'), versionHint: $('#versionHint'),
+  versionSelection: $('#versionSelection'), versionSelectionKind: $('#versionSelectionKind'),
+  versionSelectionName: $('#versionSelectionName'), versionSelectionCommit: $('#versionSelectionCommit'),
+  versionSelectionDate: $('#versionSelectionDate'),
   pathInput: $('#pathInput'), btnSavePath: $('#btnSavePath'), btnChoosePath: $('#btnChoosePath'), btnOpenDir: $('#btnOpenDir'),
   mirrorInput: $('#mirrorInput'), btnSaveMirror: $('#btnSaveMirror'),
   btnExportLauncher: $('#btnExportLauncher'), btnExportEnvironment: $('#btnExportEnvironment'), btnImportEnvironment: $('#btnImportEnvironment'),
@@ -308,6 +330,8 @@ let statsProgressHide = null;
 let lastStatsProgress = null;
 let lastStatsData = null;
 let timelinePeriod = 'day';
+let versionCatalog = null;
+let versionsLoading = false;
 
 function applyLanguage(language) {
   currentLanguage = language === 'en-US' ? 'en-US' : 'zh-CN';
@@ -319,6 +343,7 @@ function applyLanguage(language) {
   document.querySelectorAll('[data-i18n-aria-label]').forEach(el => { el.setAttribute('aria-label', t(el.dataset.i18nAriaLabel)); });
   if (lastStatsProgress) renderStatsProgress(lastStatsProgress);
   if (lastStatsData) renderStats(lastStatsData);
+  if (versionCatalog) renderVersionCatalog(versionCatalog, els.versionSelect.value);
   els.languageLabel.textContent = t('language.label');
   els.btnLanguage.title = t('language.switch');
   els.btnLanguage.setAttribute('aria-label', t('language.switch'));
@@ -357,6 +382,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   if (name === 'stats') loadStats();
   if (name === 'plugins') loadPlugins();
+  if (name === 'update' && !versionCatalog && !versionsLoading) loadVersions();
 }
 document.querySelectorAll('.nav-item').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
@@ -365,7 +391,9 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 /* ---------- 状态渲染 ---------- */
 function setBusy(b) {
   busy = b;
-  [els.btnStart, els.btnStop, els.btnCheck, els.btnUpdate, els.btnSavePath, els.btnChoosePath, els.btnBindExisting, els.btnDeploy, els.btnRedeploy, els.btnEnvCheck, els.btnExportLauncher, els.btnExportEnvironment, els.btnImportEnvironment, els.btnCleanUninstall].forEach(x => { x.disabled = b; });
+  [els.btnStart, els.btnStop, els.btnVersionRefresh, els.btnVersionSwitch, els.btnVersionRollback, els.btnSavePath, els.btnChoosePath, els.btnBindExisting, els.btnDeploy, els.btnRedeploy, els.btnEnvCheck, els.btnExportLauncher, els.btnExportEnvironment, els.btnImportEnvironment, els.btnCleanUninstall].forEach(x => { x.disabled = b; });
+  els.versionSelect.disabled = b || !versionCatalog?.ok;
+  if (!b) syncVersionControls();
 }
 
 function renderPrereq(chipEl, ok) {
@@ -838,6 +866,7 @@ async function runDeploy(force) {
   const r = await window.dsh.deploy({ force });
   setBusy(false);
   if (r.ok) {
+    versionCatalog = null;
     toast(t('toast.deployStarting'));
     const s2 = await window.dsh.start();
     if (s2.ok) {
@@ -876,53 +905,142 @@ els.btnEnvCheck.addEventListener('click', async () => {
   await refresh();
 });
 
-els.btnCheck.addEventListener('click', async () => {
-  setBusy(true);
-  els.updateHint.textContent = t('update.checking');
-  const r = await window.dsh.checkUpdate();
-  setBusy(false);
-  if (r.ok) {
-    if (r.behind > 0) {
-      els.updateHint.textContent = t('update.found', { count: r.behind, local: r.localHead, remote: r.remoteHead });
-      els.btnUpdate.disabled = false;
-      toast(t('toast.newVersion'));
-    } else {
-      els.updateHint.textContent = t('update.latest', { head: r.localHead });
-      els.btnUpdate.disabled = true;
-      toast(t('toast.latest'));
-    }
-  } else {
-    els.updateHint.textContent = t('update.checkFailed');
-    toast(t('toast.updateCheckFailed'), 'error');
-  }
-});
+function versionKindLabel(kind) {
+  return t({ latest: 'update.kindLatest', tag: 'update.kindTag', commit: 'update.kindCommit', current: 'update.kindCurrent' }[kind] || 'update.kindCommit');
+}
 
-els.btnUpdate.addEventListener('click', async () => {
+function versionOptionLabel(item) {
+  const parts = [versionKindLabel(item.kind)];
+  if (item.name) parts.push(item.name);
+  const normalizedVersion = String(item.version || '').replace(/^v/i, '');
+  const normalizedName = String(item.name || '').replace(/^v/i, '');
+  if (normalizedVersion && normalizedVersion !== normalizedName) parts.push(`v${normalizedVersion}`);
+  parts.push(item.shortCommit);
+  if (item.date) parts.push(item.date);
+  if (item.current) parts.push(`✓ ${t('update.currentSuffix')}`);
+  return parts.filter(Boolean).join(' · ');
+}
+
+function selectedVersion() {
+  return versionCatalog?.versions?.find(item => item.id === els.versionSelect.value) || null;
+}
+
+function syncVersionControls() {
+  const selected = selectedVersion();
+  const available = Boolean(versionCatalog?.ok);
+  els.versionSelect.disabled = busy || !available;
+  els.btnVersionRefresh.disabled = busy || versionsLoading;
+  els.btnVersionSwitch.disabled = busy || !selected || selected.current;
+  els.btnVersionRollback.disabled = busy || !versionCatalog?.rollback?.available;
+  els.versionSelection.hidden = !selected;
+  if (!selected) return;
+  els.versionSelectionKind.textContent = versionKindLabel(selected.kind);
+  els.versionSelectionKind.className = 'chip ' + (selected.current ? 'ok' : '');
+  els.versionSelectionName.textContent = selected.name || selected.version || selected.shortCommit;
+  els.versionSelectionCommit.textContent = selected.shortCommit;
+  els.versionSelectionDate.textContent = [selected.date, selected.subject].filter(Boolean).join(' · ');
+}
+
+function renderVersionCatalog(catalog, preferredId = '') {
+  versionCatalog = catalog?.ok ? catalog : null;
+  els.versionSelect.replaceChildren();
+  if (!versionCatalog) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = t('update.loadFirst');
+    els.versionSelect.appendChild(option);
+    syncVersionControls();
+    return;
+  }
+  for (const item of versionCatalog.versions) {
+    const option = document.createElement('option');
+    option.value = item.id;
+    option.textContent = versionOptionLabel(item);
+    els.versionSelect.appendChild(option);
+  }
+  const current = versionCatalog.versions.find(item => item.current);
+  const validPreferred = versionCatalog.versions.some(item => item.id === preferredId);
+  els.versionSelect.value = validPreferred ? preferredId : (current?.id || versionCatalog.versions[0]?.id || '');
+  const rollback = versionCatalog.rollback;
+  els.versionHint.textContent = rollback?.available
+    ? t('update.loadedRollback', { count: versionCatalog.versions.length, version: rollback.version || '—', head: rollback.shortCommit })
+    : t('update.loaded', { count: versionCatalog.versions.length });
+  syncVersionControls();
+}
+
+async function loadVersions(showToast = false) {
+  if (versionsLoading) return;
+  versionsLoading = true;
+  setBusy(true);
+  els.versionHint.textContent = t('update.loading');
+  let result;
+  try { result = await window.dsh.listVersions(); }
+  catch (error) { result = { ok: false, reason: String(error) }; }
+  versionsLoading = false;
+  setBusy(false);
+  if (result.ok) {
+    renderVersionCatalog(result);
+    if (showToast) toast(t('update.loaded', { count: result.versions.length }));
+  } else {
+    renderVersionCatalog(null);
+    els.versionHint.textContent = t('update.loadFailed');
+    toast(t('toast.versionFailed', { reason: result.reason || t('common.unknownReason') }), 'error');
+  }
+}
+
+async function runVersionOperation(kind) {
+  const target = kind === 'rollback' ? versionCatalog?.rollback : selectedVersion();
+  if (!target) return;
+  const version = target.version || target.name || '—';
+  const head = target.shortCommit || '—';
+  if (!confirm(t(kind === 'rollback' ? 'confirm.versionRollback' : 'confirm.versionSwitch', { version, head }))) return;
   const wasRunning = status && (status.state === 'running' || status.state === 'running-external');
   setBusy(true);
-  els.updateHint.textContent = t('update.updating');
-  const r = await window.dsh.runUpdate();
-  setBusy(false);
-  els.updateHint.textContent = '—';
-  els.btnUpdate.disabled = true;
-  if (r.ok) {
+  els.versionHint.textContent = t(kind === 'rollback' ? 'update.rollingBack' : 'update.switching');
+  let stopped = false;
+  let result;
+  try {
     if (wasRunning) {
-      toast(t('toast.updateRestarting'));
-      await window.dsh.stop();
-      const s2 = await window.dsh.start();
-      if (s2.ok) toast(t('toast.updateRestarted')); else toast(t('toast.restartFailed'), 'error');
-    } else {
-      toast(t('toast.updated'));
+      const stopResult = await window.dsh.stop();
+      stopped = Boolean(stopResult?.ok);
+      if (!stopped) result = { ok: false, reason: 'stop-failed' };
     }
+    if (!result) result = kind === 'rollback'
+      ? await window.dsh.rollbackVersion()
+      : await window.dsh.switchVersion(target.id);
+    if (wasRunning && stopped) {
+      const restarted = await window.dsh.start();
+      if (!restarted?.ok) toast(t('toast.restartFailed'), 'error');
+      else if (result.ok) toast(t('toast.versionRestarted'));
+    }
+  } catch (error) { result = { ok: false, reason: String(error) }; }
+  setBusy(false);
+  if (result?.ok) {
+    if (!wasRunning) toast(t(kind === 'rollback' ? 'toast.versionRolledBack' : 'toast.versionSwitched', {
+      version: result.version || version,
+      head: result.head || head
+    }));
   } else {
-    toast(t('toast.updateFailed'), 'error');
+    const key = result?.reason === 'worktree-dirty' ? 'toast.versionDirty'
+      : result?.reason === 'version-not-found' ? 'toast.versionNotFound'
+        : result?.reason === 'no-rollback' ? 'toast.noRollback' : '';
+    toast(key ? t(key) : t('toast.versionFailed', { reason: result?.reason || t('common.unknownReason') }), 'error');
   }
+  versionCatalog = null;
   await refresh();
-});
+  await loadVersions();
+}
+
+els.versionSelect.addEventListener('change', syncVersionControls);
+els.btnVersionRefresh.addEventListener('click', () => loadVersions(true));
+els.btnVersionSwitch.addEventListener('click', () => runVersionOperation('switch'));
+els.btnVersionRollback.addEventListener('click', () => runVersionOperation('rollback'));
 
 async function finishCheckoutBinding(result) {
   if (!result || result.canceled) return;
   if (result.ok) {
+    versionCatalog = null;
+    renderVersionCatalog(null);
     els.pathInput.value = result.path;
     toast(t(result.gitOk ? 'toast.bindSuccess' : 'toast.bindNonGit', { version: result.version || '—', path: result.path }));
   } else if (['not-harness', 'package-invalid', 'not-directory'].includes(result.reason)) {
@@ -1012,6 +1130,8 @@ els.btnImportEnvironment.addEventListener('click', async () => {
   finally { setBusy(false); }
   if (!result || result.canceled) return;
   if (result.ok) {
+    versionCatalog = null;
+    renderVersionCatalog(null);
     const cfg = await window.dsh.getConfig();
     els.pathInput.value = cfg.checkout || '';
     els.mirrorInput.value = cfg.deployMirrorUrl || '';

@@ -1,7 +1,7 @@
 'use strict';
 
 // 核心逻辑端到端测试：用临时 git 仓库 + 假 web 服务模拟 Harness，
-// 验证 启动 / 停止 / 检查更新 / 更新 全流程。用法：node core/service.test.js
+// 验证启动/停止、版本发现/切换/回滚等全流程。用法：node core/service.test.js
 
 const { execFileSync } = require('child_process');
 const fs = require('fs');
@@ -78,8 +78,10 @@ async function main() {
     `require('http').createServer((q,s)=>s.end('ok')).listen(${PORT},'127.0.0.1'); setInterval(()=>{},1000);`);
   sh('git', ['add', '-A'], { cwd: checkout });
   sh('git', ['commit', '-q', '-m', 'v1'], { cwd: checkout });
+  sh('git', ['tag', 'v1.0.0'], { cwd: checkout });
   sh('git', ['remote', 'add', 'origin', remote], { cwd: checkout });
   sh('git', ['push', '-q', '-u', 'origin', 'HEAD:master'], { cwd: checkout });
+  sh('git', ['push', '-q', 'origin', 'v1.0.0'], { cwd: checkout });
 
   const svc = new Service({ configPath });
   svc.setConfig({ checkout, port: PORT, startCommand: [process.execPath, 'server.js'] });
@@ -121,17 +123,20 @@ async function main() {
   const st = await svc.getStatus();
   results.statusRunning = st.state === 'running' && st.inUse;
 
-  // 2) 推送 v2 到远程，测试检查更新
-  console.log('[test] 推送 v2 并检查更新…');
+  // 2) 推送 v2 到远程，测试远程版本发现
+  console.log('[test] 推送 v2 并读取版本…');
   sh('git', ['clone', '-q', remote, tmp2]);
   sh('git', ['config', 'user.email', 't@t'], { cwd: tmp2 });
   sh('git', ['config', 'user.name', 't'], { cwd: tmp2 });
   fs.writeFileSync(path.join(tmp2, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-root', version: '2.0.0', scripts: { dsh: 'node server.js' } }));
   sh('git', ['add', '-A'], { cwd: tmp2 });
   sh('git', ['commit', '-q', '-m', 'v2'], { cwd: tmp2 });
+  sh('git', ['tag', '-a', 'v2.0.0', '-m', 'v2'], { cwd: tmp2 });
   sh('git', ['push', '-q', 'origin', 'HEAD:master'], { cwd: tmp2 });
-  const rCheck = await svc.checkUpdate();
-  results.checkUpdate = { ok: rCheck.ok, behind: rCheck.behind, ahead: rCheck.ahead };
+  sh('git', ['push', '-q', 'origin', 'v2.0.0'], { cwd: tmp2 });
+  const initialCatalog = await svc.listVersions();
+  const initialV2Target = initialCatalog.versions?.find(item => item.name === 'v2.0.0');
+  results.versionDiscovery = Boolean(initialCatalog.ok && initialV2Target && !initialV2Target.current);
 
   // 3) 停止
   console.log('[test] 停止…');
@@ -140,12 +145,34 @@ async function main() {
   await sleep(1000);
   results.portFree = !(await svc.isPortInUse(PORT));
 
-  // 4) 更新（应拉取 v2）
-  console.log('[test] 更新…');
-  const rUpd = await svc.update();
-  results.update = { ok: rUpd.ok, version: rUpd.version };
+  // 4) 手动选择 v2
+  console.log('[test] 切换到 v2…');
+  const rUpd = initialV2Target ? await svc.switchVersion(initialV2Target.id) : { ok: false };
+  results.initialVersionSwitch = { ok: rUpd.ok, version: rUpd.version };
   const pkgNow = JSON.parse(fs.readFileSync(path.join(checkout, 'package.json'), 'utf8'));
   results.versionApplied = pkgNow.version === '2.0.0';
+
+  // 4b) 版本管理：读取标签、手动选择旧版本、回滚，并拒绝覆盖未提交修改
+  console.log('[test] 版本选择与回滚…');
+  const versionCatalog = await svc.listVersions();
+  const v1Target = versionCatalog.versions?.find(item => item.name === 'v1.0.0');
+  const v2Target = versionCatalog.versions?.find(item => item.name === 'v2.0.0');
+  const switchV1 = v1Target ? await svc.switchVersion(v1Target.id) : { ok: false };
+  const versionAfterSwitch = JSON.parse(fs.readFileSync(path.join(checkout, 'package.json'), 'utf8')).version;
+  const catalogAfterSwitch = await svc.listVersions();
+  const rollbackV2 = await svc.rollbackVersion();
+  const versionAfterRollback = JSON.parse(fs.readFileSync(path.join(checkout, 'package.json'), 'utf8')).version;
+  const packageBeforeDirty = fs.readFileSync(path.join(checkout, 'package.json'), 'utf8');
+  fs.writeFileSync(path.join(checkout, 'package.json'), packageBeforeDirty + '\n');
+  const dirtySwitch = v1Target ? await svc.switchVersion(v1Target.id) : { ok: false };
+  fs.writeFileSync(path.join(checkout, 'package.json'), packageBeforeDirty);
+  const invalidVersionTarget = await svc.switchVersion('tag:v1.0.0;calc.exe');
+  results.versionManagement = Boolean(
+    versionCatalog.ok && v1Target && v2Target && switchV1.ok && versionAfterSwitch === '1.0.0' &&
+    catalogAfterSwitch.rollback?.available && rollbackV2.ok && versionAfterRollback === '2.0.0' &&
+    dirtySwitch.ok === false && dirtySwitch.reason === 'worktree-dirty'
+  );
+  results.versionTargetValidation = invalidVersionTarget.ok === false && invalidVersionTarget.reason === 'invalid-version';
 
   // 5) 一键部署（全新目标目录 + 本地远端仓库模拟，验证克隆与缓存落位）
   console.log('[test] 一键部署…');
@@ -397,9 +424,9 @@ async function main() {
 
   console.log('RESULT ' + JSON.stringify(results));
   const pass = results.securityValidation && results.bindExisting && results.bindRejectsInvalid &&
-    results.start.ok && !results.start.already && results.statusRunning &&
-    results.checkUpdate.ok && results.checkUpdate.behind === 1 && results.checkUpdate.ahead === 0 &&
-    results.stop.ok && results.portFree && results.update.ok && results.versionApplied &&
+    results.start.ok && !results.start.already && results.statusRunning && results.versionDiscovery &&
+    results.stop.ok && results.portFree && results.initialVersionSwitch.ok && results.versionApplied &&
+    results.versionManagement && results.versionTargetValidation &&
     results.deploy.ok && results.deployCheckout && results.deployNpmrc &&
     results.deployAlready && results.deployNotEmpty &&
     results.redeploy.ok && results.redeployFresh && results.redeployStore &&

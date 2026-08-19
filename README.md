@@ -18,8 +18,8 @@ Download both builds from the [latest GitHub Release](https://github.com/QiongHa
 
 | Package | Recommended for | Usage |
 | --- | --- | --- |
-| `DSH-Manager-1.2.0-windows-x64.zip` | **Recommended. Faster startup.** | Extract once, then run `DSH Manager.exe` from the extracted folder. Keep all extracted files together. |
-| `DSH-Manager-1.2.0-portable.exe` | Single-file portability | Run the EXE directly. It needs no installation, but starts more slowly because the embedded Electron runtime is extracted to a temporary folder on every launch. |
+| `DSH-Manager-*-windows-x64.zip` | **Recommended. Faster startup.** | Extract once, then run `DSH Manager.exe` from the extracted folder. Keep all extracted files together. |
+| `DSH-Manager-*-portable.exe` | Single-file portability | Run the EXE directly. It needs no installation, but starts more slowly because the embedded Electron runtime is extracted to a temporary folder on every launch. |
 
 The application is currently unsigned. Windows SmartScreen may show a warning on first launch; verify the release checksum before choosing **Run anyway**.
 
@@ -30,7 +30,7 @@ The application is currently unsigned. Windows SmartScreen may show a warning on
 | Existing Harness binding | Select an existing DeepSeek Harness source checkout, validate its structure, and immediately manage its version and process state. Ordinary Node.js folders are rejected. |
 | One-click deployment | Clone the Harness repository, keep the pnpm store inside the deployment directory, install dependencies, and start the web profile. |
 | Process management | Start `pnpm dsh web`, detect an already-running instance on port `3080`, stop manager-owned or confirmed external instances, and open the web UI. |
-| Version management | Read the package version and Git commit, discover the actual upstream branch, compare local/remote commits, fast-forward safely, reinstall changed dependencies, and restart when needed. |
+| Version management | Load upstream tags and recent commits, select an exact version manually, switch safely, and roll back previous switches. Tracked source changes block switching; changed dependencies are reinstalled and failed switches restore the original commit. |
 | API binding | Save a DeepSeek or OpenAI-compatible endpoint and API key to the official Harness files under `~/.dsh`. |
 | Token statistics | Incrementally aggregate plain and zstd-compressed session logs with live progress, monthly/daily/hourly usage bar charts, token categories, cache hit rate, model totals, and estimated cost. Unchanged history is reused from a persistent cache. |
 | Plugin management | List installed plugins, install validated pnpm-compatible package/Git specs, and remove plugins for the selected profile. Plugins are executable code, so install only reviewed sources you trust. |
@@ -41,7 +41,7 @@ The application is currently unsigned. Windows SmartScreen may show a warning on
 ## Requirements
 
 - Windows 10 or Windows 11, x64.
-- Git available on `PATH` for deployment and version updates.
+- Git available on `PATH` for deployment and version management.
 - Node.js `^22.19.0` or `>=24.0.0`.
 - pnpm available on `PATH`.
 - Network access for a new deployment, dependency installation, plugin installation, and remote update checks.
@@ -58,6 +58,8 @@ If Harness already exists on the computer, select its **repository root**—the 
 4. Open **Settings → API Binding** and save the endpoint/API key if it is not already configured.
 5. Select **Start**, then **Open web app**.
 
+Open **Version Manager** to refresh the remote catalog. Choose **Upstream latest**, a release tag, or a recent commit, then select **Switch to selected**. The manager records successful switches locally so **Roll back previous** can step back through earlier versions. A running Harness is stopped and restarted automatically.
+
 To switch to another checkout, stop the currently managed Harness first, then use **Settings → Harness directory → Choose folder**.
 
 To move the environment to another computer, open **Settings → Migration & Removal**:
@@ -73,6 +75,7 @@ Both formats exclude the API key. Launcher bundles also omit the machine-local `
 - Harness settings and credentials are written to `~/.dsh/settings.yaml` and `~/.dsh/.credentials.yaml`.
 - Session statistics are read from `~/.dsh/sessions`.
 - Per-session usage summaries are cached beside the manager configuration; unchanged history is not reparsed on every refresh.
+- Successful Harness version switches are recorded in `version-history.json` beside the manager configuration. This history contains only checkout paths, commit IDs, versions, and timestamps.
 - A manager-created deployment keeps `node_modules`, `.pnpm-store`, and its generated `.npmrc` inside the selected deployment directory.
 - Closing DSH Manager does not stop Harness; the service can continue running in the background.
 - Migration packages—including launcher bundles—deliberately omit credentials, session history, logs, Git metadata, installed dependencies, pnpm caches, `.env` files, and `.npmrc`. They are intended for environment setup, not session backup.
@@ -97,7 +100,7 @@ No desktop application can protect a plaintext Harness credential from malware o
 - The primary source is `https://github.com/deepseek-ai/deepseek-harness.git`.
 - No third-party Git mirror is enabled by default. If cloning fails, a user-configured HTTPS mirror is tried automatically.
 - If dependency installation fails, the manager retries with `https://registry.npmmirror.com`.
-- Update checks follow the bound repository's actual upstream branch instead of assuming `master` or `main`.
+- Version discovery follows the bound repository's actual upstream branch instead of assuming `master` or `main`, and combines release tags with recent upstream commits.
 
 ## Repository layout
 
@@ -110,7 +113,8 @@ DeepSeek-Harness-Manager/
 │  ├─ release-notes/
 │  │  ├─ v1.0.0.md             Bilingual notes for the first release
 │  │  ├─ v1.1.0.md             v1.1 bilingual release notes
-│  │  └─ v1.2.0.md             Current bilingual release notes
+│  │  ├─ v1.2.0.md             v1.2 bilingual release notes
+│  │  └─ v1.3.0.md             Current bilingual release notes
 │  └─ workflows/
 │     └─ release.yml           Windows validation, build and release automation
 ├─ .gitignore                   Generated/runtime file exclusions
@@ -149,8 +153,8 @@ Generated locally, but excluded from Git:
 
 ```text
 dist/
-├─ DSH-Manager-1.2.0-portable.exe
-├─ DSH-Manager-1.2.0-windows-x64.zip
+├─ DSH-Manager-1.3.0-portable.exe
+├─ DSH-Manager-1.3.0-windows-x64.zip
 └─ win-unpacked/               Temporary/full build directory
 ```
 
@@ -173,7 +177,7 @@ pnpm run icon            # Regenerate icon.png and icon.ico
 pnpm run security:audit  # Scan source, Git history and extracted release artifacts
 ```
 
-`pnpm test` covers security input policy, config/key isolation, log redaction, credential-free migration, archive restoration, and safe cleanup scope in addition to existing-checkout binding and rejection, start/stop, external port detection, upstream update checks, fast-forward updates, deployment/redeployment, mirror fallback, API persistence, token statistics, plugins, and service-layer localization. Electron smoke tests additionally check navigation, themes, language switching, responsive layout, and renderer errors.
+`pnpm test` covers security input policy, config/key isolation, log redaction, credential-free migration, archive restoration, safe cleanup scope, version discovery, exact-version switching, rollback, and dirty-worktree protection in addition to existing-checkout binding and rejection, start/stop, external port detection, deployment/redeployment, mirror fallback, API persistence, token statistics, plugins, and service-layer localization. Electron smoke tests additionally check the Version Manager controls, navigation, themes, language switching, responsive layout, and renderer errors.
 
 ## Troubleshooting
 
@@ -181,9 +185,9 @@ pnpm run security:audit  # Scan source, Git history and extracted release artifa
 
 The portable target is an NSIS self-extracting executable. It removes and recreates a temporary application directory, extracts the complete Electron runtime, starts the app, and removes that directory after exit. Antivirus scanning can add more delay. Use the complete ZIP build for normal daily use: extract it once and run `DSH Manager.exe` directly.
 
-### Version updates are unavailable after binding
+### Version management is unavailable after binding
 
-The selected folder can still be started if it is a valid Harness source archive, but version comparison and fast-forward updates require a Git checkout with an `origin` remote/upstream branch.
+The selected folder can still be started if it is a valid Harness source archive, but version discovery, switching, and rollback require a Git checkout with an `origin` remote/upstream branch. Switching is intentionally blocked when tracked files contain uncommitted changes.
 
 ### Harness does not start
 

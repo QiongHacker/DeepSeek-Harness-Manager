@@ -168,8 +168,12 @@ if (!gotLock) {
   handle('plugins:get', () => svc.getPlugins());
   handle('plugin:install', spec => svc.pluginInstall(spec));
   handle('plugin:uninstall', name => svc.pluginUninstall(name));
-  handle('update:check', () => svc.checkUpdate());
-  handle('update:run', () => svc.update());
+  handle('version:list', () => svc.listVersions());
+  handle('version:switch', target => {
+    const value = String(target || '');
+    return value.length <= 256 ? svc.switchVersion(value) : { ok: false, reason: 'invalid-version' };
+  });
+  handle('version:rollback', () => svc.rollbackVersion());
   handle('config:get', () => sanitizeStoredServiceConfig(svc.config));
   handle('config:set', patch => {
     const safe = sanitizeRendererConfigPatch(patch);
@@ -286,7 +290,12 @@ if (!gotLock) {
             statusText: document.querySelector('#statusText')?.textContent,
             btnStart: !!document.querySelector('#btnStart'),
             btnStop: !!document.querySelector('#btnStop'),
-            btnCheck: !!document.querySelector('#btnCheck'),
+            versionManager: Boolean(
+              document.querySelector('#versionSelect') &&
+              document.querySelector('#btnVersionRefresh') &&
+              document.querySelector('#btnVersionSwitch') &&
+              document.querySelector('#btnVersionRollback')
+            ),
             logo: (() => { const i = document.querySelector('.logo img'); return i ? { loaded: i.complete && i.naturalWidth > 0, w: i.naturalWidth } : null })(),
             navItems: document.querySelectorAll('.nav-item').length,
             tabPanels: document.querySelectorAll('.tab-panel').length,
@@ -386,6 +395,11 @@ if (!gotLock) {
       win.webContents.once('did-finish-load', () => {
         setTimeout(async () => {
           try {
+            const captureTab = argValue('--capture-tab');
+            if (captureTab && /^[a-z-]{1,32}$/.test(captureTab)) {
+              await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(`.nav-item[data-tab="${captureTab}"]`)})?.click()`);
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
             const image = await win.webContents.capturePage();
             fs.writeFileSync(capFile, image.toPNG());
             console.log('CAPTURE OK ' + capFile);

@@ -1,10 +1,11 @@
 'use strict';
 
 // 纯 Node 服务层：不依赖 Electron，便于单元测试。
-// 负责：状态检测、启动/停止 Harness、版本检查与更新。
+// 负责：状态检测、启动/停止 Harness、版本发现/切换/回滚。
 
 const { EventEmitter } = require('events');
 const { spawn, execFile } = require('child_process');
+const crypto = require('crypto');
 const net = require('net');
 const fs = require('fs');
 const path = require('path');
@@ -71,6 +72,7 @@ class Service extends EventEmitter {
     this._prereqCache = null;
     this._knownSecrets = new Set();
     this._bundledEnvironment = false;
+    this.versionHistoryPath = path.join(path.dirname(this.configPath), 'version-history.json');
   }
 
   get state() { return this._state; }
@@ -205,6 +207,48 @@ class Service extends EventEmitter {
     return info;
   }
 
+  _loadVersionHistory() {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(this.versionHistoryPath, 'utf8'));
+      if (parsed?.format !== 1 || !parsed.checkouts || typeof parsed.checkouts !== 'object') return { format: 1, checkouts: {} };
+      const checkouts = {};
+      for (const [checkout, entries] of Object.entries(parsed.checkouts)) {
+        if (typeof checkout !== 'string' || checkout.length > 32767 || !Array.isArray(entries)) continue;
+        checkouts[checkout] = entries.filter(entry => entry &&
+          typeof entry.head === 'string' && /^[0-9a-f]{40,64}$/i.test(entry.head) &&
+          typeof entry.version === 'string' && entry.version.length <= 128 &&
+          typeof entry.at === 'string' && entry.at.length <= 64).slice(0, 20);
+      }
+      return { format: 1, checkouts };
+    } catch { return { format: 1, checkouts: {} }; }
+  }
+
+  _saveVersionHistory(history) {
+    fs.mkdirSync(path.dirname(this.versionHistoryPath), { recursive: true });
+    writePrivateFile(this.versionHistoryPath, JSON.stringify(history, null, 2));
+  }
+
+  _checkoutHistory(history = this._loadVersionHistory()) {
+    const key = path.resolve(this.config.checkout);
+    return { history, key, entries: Array.isArray(history.checkouts[key]) ? history.checkouts[key] : [] };
+  }
+
+  _readPackageVersionAt(commit) {
+    return execCapture('git', ['show', `${commit}:package.json`], { cwd: this.config.checkout, timeout: 8000 })
+      .then(result => {
+        try { return String(JSON.parse(result.stdout).version || ''); } catch { return ''; }
+      })
+      .catch(() => '');
+  }
+
+  async _isCommitAvailable(commit) {
+    if (!/^[0-9a-f]{40,64}$/i.test(String(commit || ''))) return false;
+    try {
+      await execCapture('git', ['cat-file', '-e', `${commit}^{commit}`], { cwd: this.config.checkout, timeout: 8000 });
+      return true;
+    } catch { return false; }
+  }
+
   isPortInUse(port) {
     return new Promise(resolve => {
       const srv = net.createServer();
@@ -318,7 +362,7 @@ class Service extends EventEmitter {
       return { ok: false, reason: 'clone-failed' };
     }
     if (usedSource && usedSource !== sources[0]) {
-      this._log('info', this._m('已通过国内镜像下载成功，后续「检查更新」将自动使用该镜像源', 'Downloaded successfully from the mirror; future update checks will use it.'));
+      this._log('info', this._m('已通过配置的镜像下载成功，后续版本管理将继续使用该镜像源', 'Downloaded successfully from the configured mirror; version management will continue using it.'));
     }
 
     // 把 pnpm store（依赖缓存）放到部署目录内，避免占用 C 盘系统空间
@@ -734,29 +778,6 @@ class Service extends EventEmitter {
     return { ok: true };
   }
 
-  async checkUpdate() {
-    if (this._state === 'updating') return { ok: false, reason: 'updating' };
-    if (!this.checkoutExists()) return { ok: false, reason: 'checkout-not-found' };
-    this._log('info', this._m('正在检查远程更新…', 'Checking the remote repository for updates…'));
-    try {
-      await execCapture('git', ['fetch', 'origin', '--prune'], { cwd: this.config.checkout });
-      const remoteRef = await this._resolveRemoteRef();
-      if (!remoteRef) throw new Error(this._m('未找到可用的远程跟踪分支', 'No remote tracking branch was found'));
-      const localHead = (await execCapture('git', ['rev-parse', 'HEAD'], { cwd: this.config.checkout })).stdout.trim();
-      const remoteHead = (await execCapture('git', ['rev-parse', remoteRef], { cwd: this.config.checkout })).stdout.trim();
-      const behind = Number((await execCapture('git', ['rev-list', '--count', `HEAD..${remoteRef}`], { cwd: this.config.checkout })).stdout.trim() || 0);
-      const ahead = Number((await execCapture('git', ['rev-list', '--count', `${remoteRef}..HEAD`], { cwd: this.config.checkout })).stdout.trim() || 0);
-      const res = { ok: true, behind, ahead, remoteRef, localHead: localHead.slice(0, 7), remoteHead: remoteHead.slice(0, 7) };
-      this._log('info', behind > 0
-        ? this._m(`发现 ${behind} 个新提交（${res.localHead} → ${res.remoteHead}）`, `${behind} new commit(s) found (${res.localHead} → ${res.remoteHead})`)
-        : this._m(`已是最新版本（${res.localHead}）`, `Already up to date (${res.localHead})`));
-      return res;
-    } catch (e) {
-      this._log('error', this._m('检查更新失败: ', 'Update check failed: ') + String(e.stderr || e.message).trim());
-      return { ok: false, reason: String(e.stderr || e.message).trim() };
-    }
-  }
-
   async _resolveRemoteRef() {
     const cwd = this.config.checkout;
     const candidates = [];
@@ -778,7 +799,261 @@ class Service extends EventEmitter {
   }
 
   _fileHash(p) {
-    try { const s = fs.statSync(p); return `${s.size}:${s.mtimeMs}`; } catch { return null; }
+    try { return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'); } catch { return null; }
+  }
+
+  async listVersions() {
+    if (this._state === 'updating') return { ok: false, reason: 'updating' };
+    if (!this.checkoutExists()) return { ok: false, reason: 'checkout-not-found' };
+    this._log('info', this._m('正在读取远程版本列表…', 'Loading available versions from the remote repository…'));
+    try {
+      await execCapture('git', ['fetch', 'origin', '--prune', '--tags'], { cwd: this.config.checkout, timeout: 120000 });
+      const remoteRef = await this._resolveRemoteRef();
+      if (!remoteRef) throw new Error(this._m('未找到可用的远程跟踪分支', 'No remote tracking branch was found'));
+      try {
+        const shallow = (await execCapture('git', ['rev-parse', '--is-shallow-repository'], { cwd: this.config.checkout })).stdout.trim() === 'true';
+        const availableCommits = Number((await execCapture('git', ['rev-list', '--count', remoteRef], { cwd: this.config.checkout })).stdout.trim() || 0);
+        if (shallow && availableCommits < 30) {
+          await execCapture('git', ['fetch', 'origin', '--deepen=30'], { cwd: this.config.checkout, timeout: 120000 });
+        }
+      } catch { /* shallow-history enrichment is best effort */ }
+
+      const currentHead = (await execCapture('git', ['rev-parse', 'HEAD'], { cwd: this.config.checkout })).stdout.trim();
+      const remoteHead = (await execCapture('git', ['rev-parse', remoteRef], { cwd: this.config.checkout })).stdout.trim();
+      const currentVersion = await this._readPackageVersionAt(currentHead);
+      const remoteVersion = await this._readPackageVersionAt(remoteHead);
+      const versions = [];
+      const seenIds = new Set();
+      const featuredCommits = new Set();
+      const add = item => {
+        if (!item.commit || seenIds.has(item.id)) return;
+        if (item.kind === 'commit' && featuredCommits.has(item.commit)) return;
+        seenIds.add(item.id);
+        if (item.kind === 'latest' || item.kind === 'tag') featuredCommits.add(item.commit);
+        versions.push({ ...item, current: item.commit === currentHead });
+      };
+
+      add({
+        id: `commit:${remoteHead}`,
+        kind: 'latest',
+        name: remoteRef.replace(/^origin\//, ''),
+        version: remoteVersion,
+        commit: remoteHead,
+        shortCommit: remoteHead.slice(0, 7),
+        date: '',
+        subject: ''
+      });
+
+      let tagLines = [];
+      try {
+        const tagOutput = (await execCapture('git', [
+          'for-each-ref', '--sort=-version:refname',
+          '--format=%(refname:short)%09%(creatordate:short)%09%(objecttype)%09%(objectname)%09%(*objectname)', 'refs/tags'
+        ], { cwd: this.config.checkout })).stdout.trim();
+        tagLines = tagOutput ? tagOutput.split(/\r?\n/).slice(0, 60) : [];
+      } catch { /* tags are optional */ }
+      for (const line of tagLines) {
+        const [name, date = '', objectType = '', objectName = '', peeledName = ''] = line.split('\t');
+        if (!name) continue;
+        const commit = peeledName || (objectType === 'commit' ? objectName : '');
+        if (!/^[0-9a-f]{40,64}$/i.test(commit)) continue;
+        const versionMatch = name.match(/^v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)$/);
+        add({
+          id: `tag:${name}`,
+          kind: 'tag',
+          name,
+          version: versionMatch ? versionMatch[1] : '',
+          commit,
+          shortCommit: commit.slice(0, 7),
+          date,
+          subject: ''
+        });
+      }
+
+      let commitLines = [];
+      try {
+        const commitOutput = (await execCapture('git', [
+          'log', '-n', '30', '--date=short', '--pretty=format:%H%x09%cs%x09%s', remoteRef
+        ], { cwd: this.config.checkout })).stdout.trim();
+        commitLines = commitOutput ? commitOutput.split(/\r?\n/) : [];
+      } catch { /* remote history is optional */ }
+      for (const line of commitLines) {
+        const [commit, date = '', ...subjectParts] = line.split('\t');
+        if (!/^[0-9a-f]{40,64}$/i.test(commit || '')) continue;
+        add({
+          id: `commit:${commit}`,
+          kind: 'commit',
+          name: '',
+          version: commit === currentHead ? currentVersion : (commit === remoteHead ? remoteVersion : ''),
+          commit,
+          shortCommit: commit.slice(0, 7),
+          date,
+          subject: subjectParts.join(' ').slice(0, 160)
+        });
+      }
+
+      if (!versions.some(item => item.commit === currentHead)) {
+        versions.unshift({
+          id: `commit:${currentHead}`,
+          kind: 'current',
+          name: '',
+          version: currentVersion,
+          commit: currentHead,
+          shortCommit: currentHead.slice(0, 7),
+          date: '',
+          subject: '',
+          current: true
+        });
+      }
+
+      const { entries } = this._checkoutHistory();
+      let rollback = null;
+      for (const entry of entries) {
+        if (entry.head !== currentHead && await this._isCommitAvailable(entry.head)) {
+          rollback = { ...entry, shortCommit: entry.head.slice(0, 7) };
+          break;
+        }
+      }
+      this._log('info', this._m(
+        `已读取 ${versions.length} 个可选版本${rollback ? '，可回滚到 ' + (rollback.version || rollback.shortCommit) : ''}`,
+        `${versions.length} selectable version(s) loaded${rollback ? '; rollback available to ' + (rollback.version || rollback.shortCommit) : ''}`));
+      return {
+        ok: true,
+        current: { version: currentVersion, commit: currentHead, shortCommit: currentHead.slice(0, 7) },
+        remoteRef,
+        versions,
+        rollback: rollback ? { available: true, ...rollback } : { available: false }
+      };
+    } catch (error) {
+      const reason = String(error.stderr || error.message).trim();
+      this._log('error', this._m('读取版本列表失败: ', 'Unable to load versions: ') + reason);
+      return { ok: false, reason };
+    }
+  }
+
+  async _switchToCommit(target, { recordPrevious = true, remainingHistory = null } = {}) {
+    if (this._state === 'updating') return { ok: false, reason: 'updating' };
+    if (!this.checkoutExists()) return { ok: false, reason: 'checkout-not-found' };
+    if (await this.isPortInUse(this.config.port)) return { ok: false, reason: 'service-running' };
+    let previousHead = '';
+    let previousVersion = '';
+    let previousLock = null;
+    this.state = 'updating';
+    try {
+      const dirty = (await execCapture('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: this.config.checkout })).stdout.trim();
+      if (dirty) return { ok: false, reason: 'worktree-dirty' };
+      previousHead = (await execCapture('git', ['rev-parse', 'HEAD'], { cwd: this.config.checkout })).stdout.trim();
+      previousVersion = await this._readPackageVersionAt(previousHead);
+      if (target.commit === previousHead) {
+        return { ok: true, already: true, version: previousVersion, head: previousHead.slice(0, 7) };
+      }
+      if (!(await this._isCommitAvailable(target.commit))) return { ok: false, reason: 'version-not-found' };
+      previousLock = this._fileHash(path.join(this.config.checkout, 'pnpm-lock.yaml'));
+      this._log('info', this._m(
+        `正在切换到 ${target.version || target.name || target.shortCommit}…`,
+        `Switching to ${target.version || target.name || target.shortCommit}…`));
+      const checkout = await execCapture('git', ['checkout', '--detach', target.commit], { cwd: this.config.checkout });
+      if (checkout.stdout) this._log('info', checkout.stdout.trim());
+      if (checkout.stderr) this._log('info', checkout.stderr.trim());
+
+      const meta = this._checkoutMeta();
+      if (!meta.ok) throw Object.assign(new Error('target-is-not-harness'), { switchReason: 'target-is-not-harness' });
+      const nextLock = this._fileHash(path.join(this.config.checkout, 'pnpm-lock.yaml'));
+      if (!fs.existsSync(path.join(this.config.checkout, 'node_modules')) || previousLock !== nextLock) {
+        this._log('info', this._m(
+          '版本依赖发生变化，正在按锁文件安装依赖…',
+          'Version dependencies changed; installing from the lockfile…'));
+        const storeDir = path.join(this.config.checkout, '.pnpm-store');
+        const installArgs = fs.existsSync(path.join(this.config.checkout, 'pnpm-lock.yaml'))
+          ? ['cmd', '/c', 'pnpm', 'install', '--frozen-lockfile', '--store-dir', storeDir]
+          : ['cmd', '/c', 'pnpm', 'install', '--store-dir', storeDir];
+        let code = await this._runLogged(installArgs, this.config.checkout, 'pnpm install');
+        if (code !== 0) {
+          code = await this._runLogged([...installArgs, '--registry', DEFAULT_NPM_MIRROR], this.config.checkout, this._m('pnpm install（镜像源）', 'pnpm install (mirror)'));
+        }
+        if (code !== 0) throw Object.assign(new Error('install-failed'), { switchReason: 'install-failed' });
+      }
+
+      const next = await this.versionInfo();
+      const checkoutHistory = this._checkoutHistory();
+      let entries = Array.isArray(remainingHistory) ? remainingHistory : checkoutHistory.entries;
+      if (recordPrevious) {
+        entries = [
+          { head: previousHead, version: previousVersion, at: new Date().toISOString() },
+          ...entries.filter(entry => entry.head !== previousHead)
+        ].slice(0, 20);
+      }
+      checkoutHistory.history.checkouts[checkoutHistory.key] = entries.slice(0, 20);
+      this._saveVersionHistory(checkoutHistory.history);
+      this._log('info', this._m(
+        `✅ 已切换到版本 ${next.version} @ ${next.head}`,
+        `✅ Switched to version ${next.version} @ ${next.head}`));
+      return { ok: true, version: next.version, head: next.head, previousVersion, previousHead: previousHead.slice(0, 7) };
+    } catch (error) {
+      const reason = error.switchReason || String(error.stderr || error.message).trim();
+      if (previousHead && await this._isCommitAvailable(previousHead)) {
+        try {
+          await execCapture('git', ['checkout', '--detach', previousHead], { cwd: this.config.checkout });
+          if (reason === 'install-failed') {
+            const storeDir = path.join(this.config.checkout, '.pnpm-store');
+            const rollbackArgs = fs.existsSync(path.join(this.config.checkout, 'pnpm-lock.yaml'))
+              ? ['cmd', '/c', 'pnpm', 'install', '--frozen-lockfile', '--store-dir', storeDir]
+              : ['cmd', '/c', 'pnpm', 'install', '--store-dir', storeDir];
+            await this._runLogged(rollbackArgs, this.config.checkout, 'pnpm install rollback');
+          }
+          this._log('warn', this._m('切换失败，已恢复原版本。', 'The switch failed; the previous version was restored.'));
+        } catch (restoreError) {
+          this._log('error', this._m('恢复原版本失败: ', 'Unable to restore the previous version: ') + String(restoreError.stderr || restoreError.message).trim());
+          return { ok: false, reason, restoreFailed: true };
+        }
+      }
+      this._log('error', this._m('版本切换失败: ', 'Version switch failed: ') + reason);
+      return { ok: false, reason, restored: Boolean(previousHead) };
+    } finally {
+      this.state = 'stopped';
+    }
+  }
+
+  async switchVersion(targetId) {
+    const id = String(targetId || '');
+    if (id.length > 256 || !/^(?:tag:[A-Za-z0-9][A-Za-z0-9._/+@-]{0,200}|commit:[0-9a-f]{40,64})$/i.test(id)) {
+      return { ok: false, reason: 'invalid-version' };
+    }
+    const catalog = await this.listVersions();
+    if (!catalog.ok) return catalog;
+    const target = catalog.versions.find(item => item.id === id);
+    if (!target) return { ok: false, reason: 'version-not-found' };
+    return this._switchToCommit(target);
+  }
+
+  async rollbackVersion() {
+    if (this._state === 'updating') return { ok: false, reason: 'updating' };
+    if (!this.checkoutExists()) return { ok: false, reason: 'checkout-not-found' };
+    try {
+      await execCapture('git', ['fetch', 'origin', '--prune', '--tags'], { cwd: this.config.checkout, timeout: 120000 });
+      const currentHead = (await execCapture('git', ['rev-parse', 'HEAD'], { cwd: this.config.checkout })).stdout.trim();
+      const checkoutHistory = this._checkoutHistory();
+      const entries = [...checkoutHistory.entries];
+      let target = null;
+      while (entries.length) {
+        const candidate = entries.shift();
+        if (candidate.head !== currentHead && await this._isCommitAvailable(candidate.head)) {
+          target = candidate;
+          break;
+        }
+      }
+      if (!target) return { ok: false, reason: 'no-rollback' };
+      return this._switchToCommit({
+        commit: target.head,
+        shortCommit: target.head.slice(0, 7),
+        version: target.version,
+        name: ''
+      }, { recordPrevious: false, remainingHistory: entries });
+    } catch (error) {
+      const reason = String(error.stderr || error.message).trim();
+      this._log('error', this._m('回滚失败: ', 'Rollback failed: ') + reason);
+      return { ok: false, reason };
+    }
   }
 
   async exportEnvironment(outputPath) {
@@ -996,33 +1271,6 @@ class Service extends EventEmitter {
     });
   }
 
-  async update() {
-    if (this._state === 'updating') return { ok: false, reason: 'updating' };
-    const prevLock = this._fileHash(path.join(this.config.checkout, 'pnpm-lock.yaml'));
-    this.state = 'updating';
-    this._log('info', this._m('正在获取并快进到上游最新版本…', 'Fetching and fast-forwarding to the latest upstream version…'));
-    try {
-      await execCapture('git', ['fetch', 'origin', '--prune'], { cwd: this.config.checkout });
-      const remoteRef = await this._resolveRemoteRef();
-      if (!remoteRef) throw new Error(this._m('未找到可用的远程跟踪分支', 'No remote tracking branch was found'));
-      const r = await execCapture('git', ['merge', '--ff-only', remoteRef], { cwd: this.config.checkout });
-      if (r.stdout) this._log('info', r.stdout.trim());
-      if (r.stderr) this._log('warn', r.stderr.trim());
-    } catch (e) {
-      this._log('error', this._m('更新失败: ', 'Update failed: ') + String(e.stderr || e.message).trim());
-      this.state = 'stopped';
-      return { ok: false, reason: String(e.stderr || e.message).trim() };
-    }
-    const newLock = this._fileHash(path.join(this.config.checkout, 'pnpm-lock.yaml'));
-    if (prevLock && newLock && prevLock !== newLock) {
-      this._log('info', this._m('检测到依赖变化，正在安装依赖（pnpm install --frozen-lockfile）…', 'Dependencies changed; running pnpm install --frozen-lockfile…'));
-      await this._runLogged(['cmd', '/c', 'pnpm', 'install', '--frozen-lockfile'], this.config.checkout, 'pnpm install');
-    }
-    const v = await this.versionInfo();
-    this._log('info', this._m(`✅ 更新完成：版本 ${v.version} @ ${v.head}`, `✅ Update complete: version ${v.version} @ ${v.head}`));
-    this.state = 'stopped';
-    return { ok: true, version: v.version, head: v.head };
-  }
 }
 
 module.exports = { Service, DEFAULT_CHECKOUT, DEFAULT_PORT, DEFAULT_URL, DEFAULT_REPO };
