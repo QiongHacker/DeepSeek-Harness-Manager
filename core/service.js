@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const YAML = require('yaml');
+const { BUNDLE_FORMAT, BUNDLE_MARKER, createLauncherBundle, createMigrationPackage, importMigrationPackage } = require('./migration');
 const {
   isSafePackageName,
   isSafePluginSpec,
@@ -59,15 +60,17 @@ function isNodeVersionOk(v) {
 }
 
 class Service extends EventEmitter {
-  constructor({ configPath } = {}) {
+  constructor({ configPath, appVersion = '0.0.0' } = {}) {
     super();
     this.configPath = configPath || path.join(os.tmpdir(), 'dsh-manager-config.json');
+    this.appVersion = appVersion;
     this.config = this._loadConfig();
     this.child = null; // 由本应用启动的 Harness 子进程
     this._state = 'stopped'; // stopped | starting | running | stopping | updating | deploying
     this._logBuf = [];
     this._prereqCache = null;
     this._knownSecrets = new Set();
+    this._bundledEnvironment = false;
   }
 
   get state() { return this._state; }
@@ -645,7 +648,6 @@ class Service extends EventEmitter {
     // 启动前先检查环境，避免“启动失败却不知道原因”
     const env = await this.checkDeploy();
     const missing = [];
-    if (!env.git) missing.push('Git');
     if (!env.node) missing.push('Node.js');
     if (!env.pnpm) missing.push('pnpm');
     if (env.node && !env.nodeOk) missing.push(this._m('Node.js 版本过低（需 ^22.19.0 或 >=24）', 'Node.js is too old (requires ^22.19.0 or >=24)'));
@@ -659,6 +661,10 @@ class Service extends EventEmitter {
       this._log('info', this._m(`端口 ${this.config.port} 已被占用，检测到 Harness 已在运行`, `Port ${this.config.port} is in use; Harness appears to be running already.`));
       this.state = 'running';
       return { ok: true, already: true };
+    }
+    if (this._bundledEnvironment) {
+      const dependencies = await this._ensureBundledDependencies();
+      if (!dependencies.ok) return dependencies;
     }
 
     this.state = 'starting';
@@ -773,6 +779,210 @@ class Service extends EventEmitter {
 
   _fileHash(p) {
     try { const s = fs.statSync(p); return `${s.size}:${s.mtimeMs}`; } catch { return null; }
+  }
+
+  async exportEnvironment(outputPath) {
+    if (!this.checkoutExists()) return { ok: false, reason: 'checkout-not-found' };
+    this._log('info', this._m('正在创建无凭据迁移包…', 'Creating a credential-free migration package…'));
+    try {
+      const result = await createMigrationPackage({
+        checkout: this.config.checkout,
+        dshHome: this.config.dshHome || DEFAULT_DSH_HOME,
+        managerConfig: this.config,
+        outputPath,
+        appVersion: this.appVersion
+      });
+      this._log('info', this._m(
+        `✅ 迁移包已创建：${result.path}（已排除凭据、会话与缓存）`,
+        `✅ Migration package created: ${result.path} (credentials, sessions, and caches excluded)`));
+      return result;
+    } catch (error) {
+      this._log('error', this._m('创建迁移包失败: ', 'Unable to create migration package: ') + error.message);
+      return { ok: false, reason: error.message };
+    }
+  }
+
+  async exportLauncherBundle(outputPath, launcherDirectory) {
+    if (!this.checkoutExists()) return { ok: false, reason: 'checkout-not-found' };
+    this._log('info', this._m('正在创建包含启动器的便携环境包…', 'Creating a portable environment package with the launcher…'));
+    try {
+      const result = await createLauncherBundle({
+        launcherDirectory,
+        checkout: this.config.checkout,
+        dshHome: this.config.dshHome || DEFAULT_DSH_HOME,
+        managerConfig: this.config,
+        outputPath,
+        appVersion: this.appVersion
+      });
+      this._log('info', this._m(
+        `✅ 启动器与环境已打包：${result.path}（API Key 与会话已排除）`,
+        `✅ Launcher and environment packaged: ${result.path} (API keys and sessions excluded)`));
+      return result;
+    } catch (error) {
+      this._log('error', this._m('创建启动器环境包失败: ', 'Unable to create launcher environment package: ') + error.message);
+      return { ok: false, reason: error.message };
+    }
+  }
+
+  bindBundledEnvironment(bundleRoot) {
+    const root = path.resolve(String(bundleRoot || ''));
+    const markerPath = path.join(root, BUNDLE_MARKER);
+    if (!fs.existsSync(markerPath)) return { ok: false, reason: 'bundle-marker-not-found' };
+    try {
+      const marker = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+      if (marker.format !== BUNDLE_FORMAT || marker.formatVersion !== 1 || marker.containsCredentials !== false ||
+        marker.environmentDirectory !== 'environment' || marker.checkoutDirectory !== 'deepseek-harness' || marker.dshHomeDirectory !== '.dsh') {
+        return { ok: false, reason: 'bundle-marker-invalid' };
+      }
+      const environmentRoot = path.join(root, 'environment');
+      const checkout = path.join(environmentRoot, 'deepseek-harness');
+      const dshHome = path.join(environmentRoot, '.dsh');
+      const relativeCheckout = path.relative(root, checkout);
+      if (!relativeCheckout || relativeCheckout.startsWith('..') || path.isAbsolute(relativeCheckout)) return { ok: false, reason: 'bundle-path-invalid' };
+      const meta = this._checkoutMeta(checkout);
+      if (!meta.ok) return { ok: false, reason: 'bundle-checkout-invalid' };
+      fs.mkdirSync(dshHome, { recursive: true });
+      let portableConfig = {};
+      try {
+        portableConfig = sanitizeStoredServiceConfig(JSON.parse(fs.readFileSync(path.join(environmentRoot, 'manager-config.json'), 'utf8')));
+      } catch { /* optional */ }
+      delete portableConfig.checkout;
+      delete portableConfig.dshHome;
+      this._bundledEnvironment = true;
+      this.setConfig({ ...portableConfig, checkout: meta.path, dshHome: path.resolve(dshHome) });
+      this._log('info', this._m(`已自动绑定便携环境：${meta.path}`, `Portable environment bound automatically: ${meta.path}`));
+      return { ok: true, checkout: meta.path, dshHome: path.resolve(dshHome), dependenciesReady: meta.dependenciesReady };
+    } catch (error) {
+      return { ok: false, reason: error.message };
+    }
+  }
+
+  async _ensureBundledDependencies() {
+    const directories = [];
+    if (!fs.existsSync(path.join(this.config.checkout, 'node_modules'))) {
+      directories.push({ path: this.config.checkout, label: this._m('Harness 依赖', 'Harness dependencies') });
+    }
+    const profileDir = this._profileDir();
+    if (fs.existsSync(path.join(profileDir, 'package.json')) && !fs.existsSync(path.join(profileDir, 'node_modules'))) {
+      directories.push({ path: profileDir, label: this._m('Profile 依赖', 'Profile dependencies') });
+    }
+    if (!directories.length) return { ok: true };
+    this.state = 'deploying';
+    const storeDir = path.join(this.config.checkout, '.pnpm-store');
+    this._log('info', this._m('首次启动便携环境，正在自动安装依赖…', 'First portable-environment start: installing dependencies automatically…'));
+    try {
+      fs.writeFileSync(path.join(this.config.checkout, '.npmrc'), 'store-dir=' + storeDir.replace(/\\/g, '/') + '\n');
+      for (const directory of directories) {
+        const frozen = fs.existsSync(path.join(directory.path, 'pnpm-lock.yaml')) ? ['--frozen-lockfile'] : [];
+        let code = await this._runLogged(['cmd', '/c', 'pnpm', 'install', ...frozen, '--store-dir', storeDir], directory.path, directory.label);
+        if (code !== 0) {
+          code = await this._runLogged(['cmd', '/c', 'pnpm', 'install', '--store-dir', storeDir, '--registry', DEFAULT_NPM_MIRROR], directory.path, `${directory.label} (${this._m('镜像源', 'mirror')})`);
+        }
+        if (code !== 0) {
+          this._log('error', this._m('便携环境依赖安装失败，请检查网络与 pnpm。', 'Portable environment dependency installation failed. Check the network and pnpm.'));
+          return { ok: false, reason: 'install-failed' };
+        }
+      }
+      return { ok: true };
+    } finally {
+      this.state = 'stopped';
+    }
+  }
+
+  async importEnvironment(archivePath, targetRoot, { installDependencies = true } = {}) {
+    if (this.child || this._state !== 'stopped') return { ok: false, reason: 'service-running' };
+    const previousConfig = { ...this.config };
+    let imported = null;
+    this.state = 'deploying';
+    this._log('info', this._m('正在校验并导入迁移包…', 'Validating and importing the migration package…'));
+    try {
+      imported = await importMigrationPackage({ archivePath, targetRoot });
+      const patch = {
+        ...imported.managerConfig,
+        checkout: imported.checkout,
+        dshHome: imported.dshHome
+      };
+      this.setConfig(patch);
+      const inspected = await this.inspectCheckout(imported.checkout);
+      if (!inspected.ok) throw new Error('imported-checkout-invalid');
+      let dependenciesInstalled = fs.existsSync(path.join(imported.checkout, 'node_modules'));
+      let installReason = '';
+      if (installDependencies && !dependenciesInstalled) {
+        const prereq = await this.checkDeploy({ force: true });
+        if (!prereq.node || !prereq.pnpm) installReason = 'missing-node-or-pnpm';
+        else {
+          const storeDir = path.join(imported.checkout, '.pnpm-store');
+          fs.writeFileSync(path.join(imported.checkout, '.npmrc'), 'store-dir=' + storeDir.replace(/\\/g, '/') + '\n');
+          this._log('info', this._m('迁移数据已恢复，正在按锁文件安装依赖…', 'Migration data restored; installing dependencies from the lockfile…'));
+          let code = await this._runLogged(['cmd', '/c', 'pnpm', 'install', '--frozen-lockfile', '--store-dir', storeDir], imported.checkout, 'pnpm install');
+          if (code !== 0) {
+            code = await this._runLogged(['cmd', '/c', 'pnpm', 'install', '--store-dir', storeDir, '--registry', DEFAULT_NPM_MIRROR], imported.checkout, this._m('pnpm install（镜像源）', 'pnpm install (mirror)'));
+          }
+          dependenciesInstalled = code === 0;
+          if (!dependenciesInstalled) installReason = 'install-failed';
+        }
+      }
+      this._log(dependenciesInstalled || !installDependencies ? 'info' : 'warn', this._m(
+        dependenciesInstalled || !installDependencies
+          ? `✅ 环境已迁移并绑定：${imported.checkout}`
+          : `环境数据已迁移，但依赖未安装：${installReason}`,
+        dependenciesInstalled || !installDependencies
+          ? `✅ Environment migrated and bound: ${imported.checkout}`
+          : `Environment data was migrated, but dependencies were not installed: ${installReason}`));
+      return { ...imported, dependenciesInstalled, installReason };
+    } catch (error) {
+      if (imported) {
+        for (const target of [imported.checkout, imported.dshHome]) {
+          try { fs.rmSync(target, { recursive: true, force: true }); } catch { /* exact newly imported path only */ }
+        }
+        this.config = previousConfig;
+        this.saveConfig();
+        this.emit('config', this.config);
+      }
+      this._log('error', this._m('导入迁移包失败: ', 'Unable to import migration package: ') + error.message);
+      return { ok: false, reason: error.message };
+    } finally {
+      this.state = 'stopped';
+    }
+  }
+
+  prepareCleanup({ removeDshHome = false, removeCheckout = false, userDataPath } = {}) {
+    const managerData = path.resolve(userDataPath || path.dirname(this.configPath));
+    const expectedManagerData = path.resolve(path.dirname(this.configPath));
+    if (managerData !== expectedManagerData) return { ok: false, reason: 'invalid-manager-data-path' };
+    const targets = [{ kind: 'manager', path: managerData }];
+    if (removeDshHome) targets.push({ kind: 'dsh-home', path: path.resolve(this.config.dshHome || DEFAULT_DSH_HOME) });
+    if (removeCheckout) {
+      const meta = this._checkoutMeta();
+      if (!meta.ok) return { ok: false, reason: 'checkout-not-found' };
+      targets.push({ kind: 'checkout', path: meta.path });
+    }
+    const home = path.resolve(os.homedir());
+    const roots = new Set(targets.map(item => path.parse(item.path).root));
+    const protectedDirectories = [
+      process.env.SystemRoot,
+      process.env.ProgramFiles,
+      process.env['ProgramFiles(x86)'],
+      process.env.ProgramData
+    ].filter(Boolean).map(item => path.resolve(item));
+    for (const target of targets) {
+      const resolved = path.resolve(target.path);
+      if (!path.isAbsolute(resolved) || roots.has(resolved) || resolved === home || resolved.length < 4) {
+        return { ok: false, reason: 'unsafe-cleanup-path' };
+      }
+      if (target.kind !== 'manager' && protectedDirectories.some(dir => resolved === dir || resolved.startsWith(dir + path.sep))) {
+        return { ok: false, reason: 'protected-cleanup-path' };
+      }
+      if (target.kind === 'dsh-home') {
+        const hasDshMarker = ['settings.yaml', 'settings.yml', '.credentials.yaml', 'profiles', 'sessions']
+          .some(name => fs.existsSync(path.join(resolved, name)));
+        if (path.basename(resolved).toLowerCase() !== '.dsh' && !hasDshMarker) {
+          return { ok: false, reason: 'not-dsh-home' };
+        }
+      }
+    }
+    const unique = [...new Map(targets.map(item => [item.path.toLowerCase(), item])).values()];
+    return { ok: true, targets: unique };
   }
 
   _runLogged(cmdArgs, cwd, label = '') {

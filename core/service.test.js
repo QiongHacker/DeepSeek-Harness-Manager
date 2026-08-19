@@ -318,7 +318,69 @@ async function main() {
   results.mirrorFallback = { ok: rMirror.ok, reason: rMirror.reason, deployed: svc8.checkoutExists() };
   results.mirrorOk = rMirror.ok && svc8.checkoutExists();
 
-  // 10) 英文日志（语言配置应作用于服务层输出）
+  // 10) 无凭据环境迁移：源码/profile 可恢复，凭据、会话、依赖与 Git 历史必须排除
+  console.log('[test] 环境迁移与卸载范围…');
+  const migrationHome = path.join(base, 'migration-dsh');
+  fs.mkdirSync(path.join(migrationHome, 'sessions', 'private-session'), { recursive: true });
+  fs.mkdirSync(path.join(migrationHome, 'profiles', 'web', 'node_modules', 'private-plugin'), { recursive: true });
+  fs.writeFileSync(path.join(migrationHome, 'settings.yaml'), `llm-deepseek:\n  baseURL: https://api.deepseek.com\n  apiKey: migration-private-test-value\n`);
+  fs.writeFileSync(path.join(migrationHome, '.credentials.yaml'), `DEEPSEEK_API_KEY: migration-private-test-value\n`);
+  fs.writeFileSync(path.join(migrationHome, 'sessions', 'private-session', 'session.jsonl'), '{"private":true}\n');
+  fs.writeFileSync(path.join(migrationHome, 'profiles', 'web', 'package.json'), JSON.stringify({ name: 'profile-web', dependencies: { example: '1.0.0' } }));
+  fs.writeFileSync(path.join(migrationHome, 'profiles', 'web', 'node_modules', 'private-plugin', 'package.json'), '{}');
+  fs.mkdirSync(path.join(checkout, 'node_modules', 'temporary-dependency'), { recursive: true });
+  fs.writeFileSync(path.join(checkout, '.env.local'), 'DEEPSEEK_API_KEY=migration-private-test-value\n');
+  const migrationSvc = new Service({ configPath: path.join(base, 'migration-config.json'), appVersion: '1.1.0-test' });
+  migrationSvc.setConfig({ checkout, dshHome: migrationHome, language: 'en-US', profile: 'web' });
+  const migrationZip = path.join(base, 'environment.zip');
+  const exported = await migrationSvc.exportEnvironment(migrationZip);
+  const importSvc = new Service({ configPath: path.join(base, 'import-config.json') });
+  const importRoot = path.join(base, 'imported-environment');
+  const imported = await importSvc.importEnvironment(migrationZip, importRoot, { installDependencies: false });
+  const importedSettings = fs.readFileSync(path.join(importRoot, '.dsh', 'settings.yaml'), 'utf8');
+  results.migrationSafe = exported.ok && imported.ok && imported.checkout === path.join(importRoot, 'deepseek-harness') &&
+    importedSettings.includes('https://api.deepseek.com') && !importedSettings.includes('migration-private-test-value') &&
+    !fs.existsSync(path.join(importRoot, '.dsh', '.credentials.yaml')) &&
+    !fs.existsSync(path.join(importRoot, '.dsh', 'sessions')) &&
+    !fs.existsSync(path.join(importRoot, '.dsh', 'profiles', 'web', 'node_modules')) &&
+    !fs.existsSync(path.join(importRoot, 'deepseek-harness', '.git')) &&
+    !fs.existsSync(path.join(importRoot, 'deepseek-harness', 'node_modules')) &&
+    !fs.existsSync(path.join(importRoot, 'deepseek-harness', '.env.local')) &&
+    importSvc.config.checkout === path.join(importRoot, 'deepseek-harness') && importSvc.config.language === 'en-US';
+  const launcherDir = path.join(base, 'fake-launcher');
+  fs.mkdirSync(path.join(launcherDir, 'resources'), { recursive: true });
+  fs.writeFileSync(path.join(launcherDir, 'DSH Manager.exe'), 'fake-launcher-binary');
+  fs.writeFileSync(path.join(launcherDir, 'resources', 'app.asar'), 'fake-app-archive');
+  fs.writeFileSync(path.join(launcherDir, 'version'), '1.2.0');
+  fs.writeFileSync(path.join(launcherDir, 'unrelated-user-file.txt'), 'must-not-be-exported');
+  const launcherBundle = path.join(base, 'launcher-environment.zip');
+  const launcherExported = await migrationSvc.exportLauncherBundle(launcherBundle, launcherDir);
+  const launcherExtracted = path.join(base, 'launcher-extracted');
+  fs.mkdirSync(launcherExtracted);
+  sh(require('7zip-bin').path7za, ['x', '-y', `-o${launcherExtracted}`, launcherBundle]);
+  const bundleSvc = new Service({ configPath: path.join(base, 'bundle-config.json') });
+  const bundleBound = bundleSvc.bindBundledEnvironment(launcherExtracted);
+  const bundleMarker = JSON.parse(fs.readFileSync(path.join(launcherExtracted, 'dsh-portable-environment.json'), 'utf8'));
+  results.launcherBundle = launcherExported.ok && bundleBound.ok && bundleMarker.containsCredentials === false &&
+    fs.existsSync(path.join(launcherExtracted, 'DSH Manager.exe')) &&
+    fs.existsSync(path.join(launcherExtracted, 'resources', 'app.asar')) &&
+    fs.existsSync(path.join(launcherExtracted, 'README-FIRST.txt')) &&
+    !fs.existsSync(path.join(launcherExtracted, 'unrelated-user-file.txt')) &&
+    !fs.existsSync(path.join(launcherExtracted, 'environment', '.dsh', 'settings.yaml')) &&
+    !fs.existsSync(path.join(launcherExtracted, 'environment', 'deepseek-harness', 'node_modules')) &&
+    bundleSvc.config.checkout === path.join(launcherExtracted, 'environment', 'deepseek-harness') &&
+    bundleSvc.config.dshHome === path.join(launcherExtracted, 'environment', '.dsh');
+  const cleanupPreview = importSvc.prepareCleanup({
+    removeDshHome: true,
+    removeCheckout: true,
+    userDataPath: path.dirname(importSvc.configPath)
+  });
+  const unsafeCleanup = importSvc.prepareCleanup({ userDataPath: path.parse(importSvc.configPath).root });
+  results.cleanupScope = cleanupPreview.ok && cleanupPreview.targets.some(item => item.kind === 'manager') &&
+    cleanupPreview.targets.some(item => item.kind === 'dsh-home') && cleanupPreview.targets.some(item => item.kind === 'checkout') &&
+    !unsafeCleanup.ok;
+
+  // 11) 英文日志（语言配置应作用于服务层输出）
   console.log('[test] 中英文切换…');
   const svc9 = new Service({ configPath: path.join(base, 'config9.json') });
   svc9.setConfig({ language: 'en-US', port: I18N_PORT });
@@ -347,7 +409,7 @@ async function main() {
     results.statsOk && results.hitRateOk && results.statsCostOk && results.statsTimeline && results.statsProgress && results.statsCache &&
     results.statsIncrementalCache && results.statsIncrementalUpdate && results.statsIncrementalDelete && results.statsCacheRecovery &&
     results.pluginsOk && results.pluginsUninit &&
-    results.mirrorOk && results.i18n;
+    results.mirrorOk && results.migrationSafe && results.launcherBundle && results.cleanupScope && results.i18n;
   console.log(pass ? 'ALL PASS ✅' : 'TEST FAILED ❌');
   process.exit(pass ? 0 : 1);
 }

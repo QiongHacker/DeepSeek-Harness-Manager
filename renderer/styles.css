@@ -373,6 +373,12 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .api-head { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
 .api-path { max-width: 280px; margin-left: auto; overflow: hidden; color: var(--text-secondary); font-family: var(--mono); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .api-actions { display: flex; align-items: center; gap: 12px; margin-top: 1px; }
+.maintenance-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
+.maintenance-head .note { margin-top: 4px; }
+.maintenance-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.maintenance-note { margin-top: 10px; }
+.maintenance-divider { height: 1px; margin: 15px 0; background: var(--border); }
+.cleanup-options { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; margin-bottom: 12px; }
 
 .stats-progress {
   padding: 11px 13px;

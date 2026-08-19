@@ -34,6 +34,13 @@ const I18N = {
     'settings.mirrorNote': '首次部署必须联网。默认只信任官方 GitHub 源；仅在你明确填写 HTTPS 镜像后才会回退使用（npm 依赖失败仍会用带完整性校验的国内镜像重试）。',
     'settings.openAfterStart': '启动成功后自动打开网页',
     'settings.envNote': '「概览」页的环境与部署面板会持续显示部署状态与环境检查结果（Git / Node.js / pnpm），缺少工具时启动会提前给出明确提示。',
+    'maintenance.title': '环境迁移与卸载', 'maintenance.subtitle': '一键导出或恢复可迁移环境，并按所选范围清理本机数据',
+    'maintenance.export': '仅导出环境包', 'maintenance.exportLauncher': '连同启动器导出', 'maintenance.import': '导入并绑定',
+    'maintenance.migrationNote': '“连同启动器导出”生成解压即用的完整 ZIP：运行 DSH Manager.exe 后自动绑定随包环境，首次启动自动安装依赖。两种导出都排除 API Key、凭据、会话和日志；目标电脑需重新填写 API Key。',
+    'maintenance.removeDshHome': '同时删除 Harness 用户数据（API Key、会话、插件配置）',
+    'maintenance.removeCheckout': '同时删除已绑定的 Harness 源码目录',
+    'maintenance.uninstall': '干净卸载并退出',
+    'maintenance.uninstallNote': '默认只清理管理器设置与缓存。便携版不注册系统安装项，数据清理后手动删除下载的 EXE 或整个解压目录即可。',
     'api.title': 'API 绑定', 'api.unbound': '未绑定', 'api.provider': '服务商',
     'api.deepseek': 'DeepSeek（默认）', 'api.custom': '自定义（OpenAI 兼容）', 'api.platform': '管理平台',
     'api.openPlatform': '打开平台', 'api.save': '保存 API',
@@ -85,6 +92,7 @@ const I18N = {
     'confirm.pluginUninstall': '确定卸载插件 {name} 吗？卸载后需重启 Harness 生效。',
     'confirm.stopExternal': '检测到由外部启动的 Harness 实例，确定要终止它吗？',
     'confirm.redeploy': '重新部署将停止服务、删除现有目录并重新下载安装，确定继续吗？',
+    'confirm.cleanUninstall': '将清理管理器数据并退出。所选的 Harness 数据会永久删除，是否继续核对删除清单？',
     'log.installPlugin': '—— 用户点击：安装插件 {spec} ——', 'log.uninstallPlugin': '—— 用户点击：卸载插件 {name} ——',
     'log.start': '—— 用户点击：启动 ——', 'log.stop': '—— 用户点击：停止 ——', 'log.action': '—— 用户点击：{action} ——',
     'toast.pluginSpecRequired': '请输入插件包名', 'toast.pluginInstalled': '✅ 插件安装完成，重启 Harness 后生效',
@@ -114,7 +122,12 @@ const I18N = {
     'toast.bindFailed': '绑定失败：{reason}', 'toast.mirrorSaved': '已保存下载镜像：{mirror}',
     'toast.mirrorCleared': '已清除下载镜像（仅使用官方 GitHub 源）', 'toast.openingPlatform': '正在打开 API 管理平台…',
     'toast.apiKeyRequired': '⚠ 请填写 API Key', 'toast.baseUrlRequired': '⚠ 请填写 Base URL',
-    'toast.apiSaved': '✅ API 已保存，立即生效', 'toast.saveFailed': '保存失败：{reason}', 'common.unknownReason': '未知原因'
+    'toast.apiSaved': '✅ API 已保存，立即生效', 'toast.saveFailed': '保存失败：{reason}',
+    'toast.exported': '✅ 环境迁移包已创建', 'toast.imported': '✅ 环境已迁移、绑定并完成依赖安装',
+    'toast.launcherExported': '✅ 启动器与便携环境已打包，解压后运行 DSH Manager.exe 即可',
+    'toast.importedNeedsInstall': '环境已迁移并绑定，但依赖安装未完成，请查看日志',
+    'toast.migrationFailed': '环境迁移失败：{reason}', 'toast.cleanupFailed': '卸载清理无法启动：{reason}',
+    'common.unknownReason': '未知原因'
   },
   'en-US': {
     'brand.subtitle': 'DeepSeek Harness Manager',
@@ -141,6 +154,13 @@ const I18N = {
     'settings.mirrorNote': 'The first deployment requires internet access. Only the official GitHub source is trusted by default; a fallback is used only when you explicitly configure an HTTPS mirror. npm retries use lockfile integrity checks.',
     'settings.openAfterStart': 'Open the web app after startup',
     'settings.envNote': 'The Overview page always shows deployment status and Git / Node.js / pnpm checks, with clear guidance when a tool is missing.',
+    'maintenance.title': 'Migration & Removal', 'maintenance.subtitle': 'Export or restore a portable environment and clean selected local data',
+    'maintenance.export': 'Environment only', 'maintenance.exportLauncher': 'Export with launcher', 'maintenance.import': 'Import & bind',
+    'maintenance.migrationNote': 'Export with launcher creates an extract-and-run ZIP. DSH Manager.exe binds the bundled environment automatically and installs dependencies on first start. Both exports exclude API keys, credentials, sessions, and logs; enter the API key again on the destination computer.',
+    'maintenance.removeDshHome': 'Also delete Harness user data (API key, sessions, and plugin configuration)',
+    'maintenance.removeCheckout': 'Also delete the bound Harness source checkout',
+    'maintenance.uninstall': 'Clean data & quit',
+    'maintenance.uninstallNote': 'By default, only manager settings and caches are removed. Portable builds register no system installer; afterward, delete the downloaded EXE or extracted application folder.',
     'api.title': 'API Binding', 'api.unbound': 'Not bound', 'api.provider': 'Provider',
     'api.deepseek': 'DeepSeek (default)', 'api.custom': 'Custom (OpenAI compatible)', 'api.platform': 'Platform',
     'api.openPlatform': 'Open platform', 'api.save': 'Save API',
@@ -192,6 +212,7 @@ const I18N = {
     'confirm.pluginUninstall': 'Uninstall {name}? Restart Harness afterward to apply the change.',
     'confirm.stopExternal': 'Harness was started outside this manager. Do you want to terminate it?',
     'confirm.redeploy': 'Redeploying stops the service, deletes the current directory, and downloads a fresh copy. Continue?',
+    'confirm.cleanUninstall': 'This removes manager data and quits. Selected Harness data will be permanently deleted. Continue to the final deletion review?',
     'log.installPlugin': '—— User action: install plugin {spec} ——', 'log.uninstallPlugin': '—— User action: uninstall plugin {name} ——',
     'log.start': '—— User action: start ——', 'log.stop': '—— User action: stop ——', 'log.action': '—— User action: {action} ——',
     'toast.pluginSpecRequired': 'Enter a plugin package or spec', 'toast.pluginInstalled': '✅ Plugin installed. Restart Harness to apply it.',
@@ -221,7 +242,12 @@ const I18N = {
     'toast.bindFailed': 'Unable to bind: {reason}', 'toast.mirrorSaved': 'Download mirror saved: {mirror}',
     'toast.mirrorCleared': 'Download mirror cleared; only the official GitHub source will be used', 'toast.openingPlatform': 'Opening the API platform…',
     'toast.apiKeyRequired': '⚠ Enter an API key', 'toast.baseUrlRequired': '⚠ Enter a Base URL',
-    'toast.apiSaved': '✅ API settings saved and active', 'toast.saveFailed': 'Unable to save: {reason}', 'common.unknownReason': 'Unknown reason'
+    'toast.apiSaved': '✅ API settings saved and active', 'toast.saveFailed': 'Unable to save: {reason}',
+    'toast.exported': '✅ Environment migration package created', 'toast.imported': '✅ Environment migrated, bound, and dependencies installed',
+    'toast.launcherExported': '✅ Launcher and portable environment packaged. Extract it and run DSH Manager.exe.',
+    'toast.importedNeedsInstall': 'Environment migrated and bound, but dependencies were not installed. Check the logs.',
+    'toast.migrationFailed': 'Environment migration failed: {reason}', 'toast.cleanupFailed': 'Unable to start cleanup: {reason}',
+    'common.unknownReason': 'Unknown reason'
   }
 };
 
@@ -253,6 +279,8 @@ const els = {
   btnCheck: $('#btnCheck'), btnUpdate: $('#btnUpdate'), updateHint: $('#updateHint'),
   pathInput: $('#pathInput'), btnSavePath: $('#btnSavePath'), btnChoosePath: $('#btnChoosePath'), btnOpenDir: $('#btnOpenDir'),
   mirrorInput: $('#mirrorInput'), btnSaveMirror: $('#btnSaveMirror'),
+  btnExportLauncher: $('#btnExportLauncher'), btnExportEnvironment: $('#btnExportEnvironment'), btnImportEnvironment: $('#btnImportEnvironment'),
+  btnCleanUninstall: $('#btnCleanUninstall'), chkRemoveDshHome: $('#chkRemoveDshHome'), chkRemoveCheckout: $('#chkRemoveCheckout'),
   chkOpen: $('#chkOpen'), log: $('#log'), btnClear: $('#btnClear'), chkAutoScroll: $('#chkAutoScroll'),
   btnOpen: $('#btnOpen'), btnTheme: $('#btnTheme'), themeLabel: $('#themeLabel'),
   btnLanguage: $('#btnLanguage'), languageLabel: $('#languageLabel'), btnQuit: $('#btnQuit'), toast: $('#toast'),
@@ -337,7 +365,7 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 /* ---------- 状态渲染 ---------- */
 function setBusy(b) {
   busy = b;
-  [els.btnStart, els.btnStop, els.btnCheck, els.btnUpdate, els.btnSavePath, els.btnChoosePath, els.btnBindExisting, els.btnDeploy, els.btnRedeploy, els.btnEnvCheck].forEach(x => { x.disabled = b; });
+  [els.btnStart, els.btnStop, els.btnCheck, els.btnUpdate, els.btnSavePath, els.btnChoosePath, els.btnBindExisting, els.btnDeploy, els.btnRedeploy, els.btnEnvCheck, els.btnExportLauncher, els.btnExportEnvironment, els.btnImportEnvironment, els.btnCleanUninstall].forEach(x => { x.disabled = b; });
 }
 
 function renderPrereq(chipEl, ok) {
@@ -952,6 +980,63 @@ els.btnQuit.addEventListener('click', () => window.dsh.quit());
 els.btnClear.addEventListener('click', () => { els.log.innerHTML = ''; });
 els.pathInput.addEventListener('keydown', e => { if (e.key === 'Enter') els.btnSavePath.click(); });
 els.chkOpen.addEventListener('change', () => window.dsh.setConfig({ openAfterStart: els.chkOpen.checked }));
+
+/* ---------- 环境迁移与卸载 ---------- */
+els.btnExportLauncher.addEventListener('click', async () => {
+  setBusy(true);
+  let result;
+  try { result = await window.dsh.exportLauncherEnvironment(); }
+  catch (error) { result = { ok: false, reason: String(error) }; }
+  finally { setBusy(false); }
+  if (!result || result.canceled) return;
+  if (result.ok) toast(t('toast.launcherExported'));
+  else toast(t('toast.migrationFailed', { reason: result.reason || t('common.unknownReason') }), 'error');
+});
+
+els.btnExportEnvironment.addEventListener('click', async () => {
+  setBusy(true);
+  let result;
+  try { result = await window.dsh.exportEnvironment(); }
+  catch (error) { result = { ok: false, reason: String(error) }; }
+  finally { setBusy(false); }
+  if (!result || result.canceled) return;
+  if (result.ok) toast(t('toast.exported'));
+  else toast(t('toast.migrationFailed', { reason: result.reason || t('common.unknownReason') }), 'error');
+});
+
+els.btnImportEnvironment.addEventListener('click', async () => {
+  setBusy(true);
+  let result;
+  try { result = await window.dsh.importEnvironment(); }
+  catch (error) { result = { ok: false, reason: String(error) }; }
+  finally { setBusy(false); }
+  if (!result || result.canceled) return;
+  if (result.ok) {
+    const cfg = await window.dsh.getConfig();
+    els.pathInput.value = cfg.checkout || '';
+    els.mirrorInput.value = cfg.deployMirrorUrl || '';
+    renderApiBinding(await window.dsh.getApiBinding());
+    toast(t(result.dependenciesInstalled ? 'toast.imported' : 'toast.importedNeedsInstall'), result.dependenciesInstalled ? 'info' : 'warn');
+    await refresh();
+  } else toast(t('toast.migrationFailed', { reason: result.reason || t('common.unknownReason') }), 'error');
+});
+
+els.btnCleanUninstall.addEventListener('click', async () => {
+  if (!confirm(t('confirm.cleanUninstall'))) return;
+  setBusy(true);
+  let result;
+  try {
+    result = await window.dsh.cleanUninstall({
+      removeDshHome: els.chkRemoveDshHome.checked,
+      removeCheckout: els.chkRemoveCheckout.checked
+    });
+  } catch (error) { result = { ok: false, reason: String(error) }; }
+  if (!result || result.canceled) { setBusy(false); return; }
+  if (!result.ok) {
+    setBusy(false);
+    toast(t('toast.cleanupFailed', { reason: result.reason || t('common.unknownReason') }), 'error');
+  }
+});
 
 /* ---------- API 绑定 ---------- */
 els.apiProvider.addEventListener('change', () => {

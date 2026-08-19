@@ -1,6 +1,7 @@
 'use strict';
 
 const { app, BrowserWindow, ipcMain, shell, screen, dialog, protocol, net } = require('electron');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -31,7 +32,36 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  const svc = new Service({ configPath: path.join(app.getPath('userData'), 'config.json') });
+  const svc = new Service({ configPath: path.join(app.getPath('userData'), 'config.json'), appVersion: app.getVersion() });
+  svc.bindBundledEnvironment(path.dirname(process.execPath));
+
+  function launcherDirectory() {
+    const candidates = app.isPackaged
+      ? [path.dirname(process.execPath)]
+      : [path.join(__dirname, 'dist', 'win-unpacked')];
+    return candidates.find(candidate => fs.existsSync(path.join(candidate, 'DSH Manager.exe')) &&
+      fs.existsSync(path.join(candidate, 'resources', 'app.asar'))) || '';
+  }
+
+  function scheduleCleanup(targets) {
+    const suffix = `${process.pid}-${Date.now()}`;
+    const taskPath = path.join(app.getPath('temp'), `dsh-manager-cleanup-${suffix}.json`);
+    const scriptPath = path.join(app.getPath('temp'), `dsh-manager-cleanup-${suffix}.ps1`);
+    fs.writeFileSync(taskPath, JSON.stringify({ parentPid: process.pid, targets }, null, 2));
+    fs.writeFileSync(scriptPath, `param([Parameter(Mandatory=$true)][string]$TaskPath)\r\n` +
+      `$ErrorActionPreference = 'SilentlyContinue'\r\n` +
+      `$task = Get-Content -LiteralPath $TaskPath -Raw | ConvertFrom-Json\r\n` +
+      `Wait-Process -Id ([int]$task.parentPid) -Timeout 30\r\n` +
+      `Start-Sleep -Milliseconds 400\r\n` +
+      `foreach ($target in $task.targets) { Remove-Item -LiteralPath ([string]$target) -Recurse -Force }\r\n` +
+      `Remove-Item -LiteralPath $TaskPath -Force\r\n` +
+      `Remove-Item -LiteralPath $PSCommandPath -Force\r\n`);
+    const helper = spawn('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+      '-File', scriptPath, '-TaskPath', taskPath
+    ], { detached: true, stdio: 'ignore', windowsHide: true });
+    helper.unref();
+  }
 
   function createWindow() {
     const { width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workAreaSize;
@@ -146,6 +176,68 @@ if (!gotLock) {
     if (!safe.ok) return safe;
     svc.setConfig(safe.patch);
     return { ok: true, ...sanitizeStoredServiceConfig(svc.config) };
+  });
+  handle('migration:export', async () => {
+    const date = new Date().toISOString().slice(0, 10);
+    const result = await dialog.showSaveDialog(win, {
+      title: svc.config.language === 'en-US' ? 'Export a safe Harness environment package' : '导出安全的 Harness 环境迁移包',
+      defaultPath: path.join(app.getPath('documents'), `DSH-Environment-${date}.zip`),
+      filters: [{ name: 'ZIP archive', extensions: ['zip'] }]
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true, reason: 'canceled' };
+    const output = result.filePath.toLowerCase().endsWith('.zip') ? result.filePath : `${result.filePath}.zip`;
+    return svc.exportEnvironment(output);
+  });
+  handle('migration:exportLauncher', async () => {
+    const source = launcherDirectory();
+    if (!source) return { ok: false, reason: 'launcher-build-not-found' };
+    const date = new Date().toISOString().slice(0, 10);
+    const result = await dialog.showSaveDialog(win, {
+      title: svc.config.language === 'en-US' ? 'Export launcher with the portable Harness environment' : '连同启动器导出便携 Harness 环境',
+      defaultPath: path.join(app.getPath('documents'), `DSH-Launcher-Environment-${date}.zip`),
+      filters: [{ name: 'Ready-to-use ZIP', extensions: ['zip'] }]
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true, reason: 'canceled' };
+    const output = result.filePath.toLowerCase().endsWith('.zip') ? result.filePath : `${result.filePath}.zip`;
+    return svc.exportLauncherBundle(output, source);
+  });
+  handle('migration:import', async () => {
+    const source = await dialog.showOpenDialog(win, {
+      title: svc.config.language === 'en-US' ? 'Select a DSH migration package' : '选择 DSH 环境迁移包',
+      properties: ['openFile'],
+      filters: [{ name: 'DSH migration package', extensions: ['zip'] }]
+    });
+    if (source.canceled || !source.filePaths[0]) return { ok: false, canceled: true, reason: 'canceled' };
+    const destination = await dialog.showOpenDialog(win, {
+      title: svc.config.language === 'en-US' ? 'Select the destination parent folder' : '选择迁移环境的目标父目录',
+      properties: ['openDirectory', 'createDirectory']
+    });
+    if (destination.canceled || !destination.filePaths[0]) return { ok: false, canceled: true, reason: 'canceled' };
+    return svc.importEnvironment(source.filePaths[0], destination.filePaths[0], { installDependencies: true });
+  });
+  handle('maintenance:cleanUninstall', async options => {
+    const removeDshHome = Boolean(options && options.removeDshHome);
+    const removeCheckout = Boolean(options && options.removeCheckout);
+    const preview = svc.prepareCleanup({ removeDshHome, removeCheckout, userDataPath: app.getPath('userData') });
+    if (!preview.ok) return preview;
+    const english = svc.config.language === 'en-US';
+    const labels = { manager: english ? 'Manager settings and cache' : '管理器设置与缓存', 'dsh-home': english ? 'Harness user data (credentials and sessions)' : 'Harness 用户数据（凭据与会话）', checkout: english ? 'Bound Harness source checkout' : '已绑定的 Harness 源码目录' };
+    const detail = preview.targets.map(item => `${labels[item.kind]}\n${item.path}`).join('\n\n');
+    const confirmation = await dialog.showMessageBox(win, {
+      type: 'warning',
+      title: english ? 'Confirm clean removal' : '确认干净卸载',
+      message: english ? 'The selected local data will be permanently deleted after the manager exits.' : '管理器退出后，将永久删除以下所选本地数据。',
+      detail: `${detail}\n\n${english ? 'Portable application files are not deleted automatically. Delete the downloaded EXE or extracted application folder afterward.' : '便携版程序文件不会被自动删除。完成后请手动删除下载的 EXE 或解压后的程序目录。'}`,
+      buttons: [english ? 'Cancel' : '取消', english ? 'Delete data and quit' : '删除数据并退出'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    });
+    if (confirmation.response !== 1) return { ok: false, canceled: true, reason: 'canceled' };
+    await svc.stop();
+    scheduleCleanup(preview.targets.map(item => item.path));
+    setTimeout(() => app.quit(), 100);
+    return { ok: true, quitting: true };
   });
   handle('logs:get', () => svc.getLogs());
   handle('app:open', () => shell.openExternal(DEFAULT_URL));
@@ -266,6 +358,14 @@ if (!gotLock) {
                 document.querySelectorAll('[data-timeline-period]').length === 3
             ),
             statsNav: document.querySelectorAll('.nav-item[data-tab="stats"]').length,
+            maintenance: Boolean(
+              document.querySelector('#btnExportEnvironment') &&
+                document.querySelector('#btnExportLauncher') &&
+                document.querySelector('#btnImportEnvironment') &&
+                document.querySelector('#btnCleanUninstall') &&
+                document.querySelector('#chkRemoveDshHome') &&
+                document.querySelector('#chkRemoveCheckout')
+            ),
             envState: document.querySelector('#envDeployState')?.textContent,
             redeployVisible: !document.querySelector('#btnRedeploy').hidden,
             chips: document.querySelectorAll('.chip').length,

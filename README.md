@@ -18,8 +18,8 @@ Download both builds from the [latest GitHub Release](https://github.com/QiongHa
 
 | Package | Recommended for | Usage |
 | --- | --- | --- |
-| `DSH-Manager-1.1.0-windows-x64.zip` | **Recommended. Faster startup.** | Extract once, then run `DSH Manager.exe` from the extracted folder. Keep all extracted files together. |
-| `DSH-Manager-1.1.0-portable.exe` | Single-file portability | Run the EXE directly. It needs no installation, but starts more slowly because the embedded Electron runtime is extracted to a temporary folder on every launch. |
+| `DSH-Manager-1.2.0-windows-x64.zip` | **Recommended. Faster startup.** | Extract once, then run `DSH Manager.exe` from the extracted folder. Keep all extracted files together. |
+| `DSH-Manager-1.2.0-portable.exe` | Single-file portability | Run the EXE directly. It needs no installation, but starts more slowly because the embedded Electron runtime is extracted to a temporary folder on every launch. |
 
 The application is currently unsigned. Windows SmartScreen may show a warning on first launch; verify the release checksum before choosing **Run anyway**.
 
@@ -34,6 +34,8 @@ The application is currently unsigned. Windows SmartScreen may show a warning on
 | API binding | Save a DeepSeek or OpenAI-compatible endpoint and API key to the official Harness files under `~/.dsh`. |
 | Token statistics | Incrementally aggregate plain and zstd-compressed session logs with live progress, monthly/daily/hourly usage bar charts, token categories, cache hit rate, model totals, and estimated cost. Unchanged history is reused from a persistent cache. |
 | Plugin management | List installed plugins, install validated pnpm-compatible package/Git specs, and remove plugins for the selected profile. Plugins are executable code, so install only reviewed sources you trust. |
+| Environment migration | Export either an environment-only archive or a complete extract-and-run ZIP containing DSH Manager. The bundled launcher binds its relative Harness environment automatically and installs missing dependencies on first start. |
+| Clean removal | Remove manager settings/caches and optionally delete the Harness user-data and bound source directories after a native final review. Portable application files remain under the user's control. |
 | Modern interface | DeepSeek-inspired light/dark themes, Chinese/English switching, persistent preferences, and a responsive layout down to `680 × 520`. |
 
 ## Requirements
@@ -58,6 +60,13 @@ If Harness already exists on the computer, select its **repository root**—the 
 
 To switch to another checkout, stop the currently managed Harness first, then use **Settings → Harness directory → Choose folder**.
 
+To move the environment to another computer, open **Settings → Migration & Removal**:
+
+- **Export with launcher** creates a complete ZIP. Extract it on the destination computer, run `DSH Manager.exe`, then select **Start**. The included environment is bound automatically; missing checkout/profile dependencies are installed on the first start.
+- **Environment only** creates the smaller migration archive used by **Import & bind**. Import creates `deepseek-harness` and `.dsh` under the selected parent folder and installs dependencies from the included lockfile.
+
+Both formats exclude the API key. Launcher bundles also omit the machine-local `settings.yaml`; enter API settings again after migration. The first start of an exported launcher bundle requires Node.js, pnpm, and network access when dependencies are not already installed.
+
 ## Storage and configuration
 
 - Manager preferences are stored in Electron's per-user application data directory.
@@ -66,6 +75,7 @@ To switch to another checkout, stop the currently managed Harness first, then us
 - Per-session usage summaries are cached beside the manager configuration; unchanged history is not reparsed on every refresh.
 - A manager-created deployment keeps `node_modules`, `.pnpm-store`, and its generated `.npmrc` inside the selected deployment directory.
 - Closing DSH Manager does not stop Harness; the service can continue running in the background.
+- Migration packages—including launcher bundles—deliberately omit credentials, session history, logs, Git metadata, installed dependencies, pnpm caches, `.env` files, and `.npmrc`. They are intended for environment setup, not session backup.
 
 The default checkout path is `%USERPROFILE%\deepseek-harness`, but it can be replaced by binding any valid checkout in the interface or by setting `DSH_CHECKOUT`.
 
@@ -74,6 +84,7 @@ The default checkout path is `%USERPROFILE%\deepseek-harness`, but it can be rep
 - The renderer runs on an allowlisted `app://` protocol with Chromium sandboxing, context isolation, no Node.js integration, a restrictive Content Security Policy, blocked navigation/windows/permissions, and an allowlisted preload bridge.
 - Every IPC request is accepted only from the manager's main local frame. External links and configurable endpoints are protocol-validated; persisted settings cannot override process commands or the official deployment source.
 - API keys are never returned to the renderer after saving. Only a suffix mask is shown, and known/token-shaped secrets are redacted from logs.
+- Migration export strips sensitive YAML fields and excludes files containing the configured key or common token formats. Import tests the ZIP, rejects unexpected/symbolic paths, and verifies the declared size and SHA-256 digest of every payload file before copying it.
 - Manager preferences never store API keys. Harness compatibility currently requires the key in `~/.dsh/settings.yaml` and `~/.dsh/.credentials.yaml`; these per-user files are excluded from every build.
 - Release builds enable Electron fuses and ASAR integrity restrictions. CI audits dependencies, scans source and complete Git history, builds the packages, then extracts and scans the ZIP/portable EXE before publishing. The scanner detects common credential formats; when run on the development computer it also checks exact matches against locally configured keys without printing their value.
 
@@ -98,7 +109,8 @@ DeepSeek-Harness-Manager/
 ├─ .github/
 │  ├─ release-notes/
 │  │  ├─ v1.0.0.md             Bilingual notes for the first release
-│  │  └─ v1.1.0.md             Current bilingual release notes
+│  │  ├─ v1.1.0.md             v1.1 bilingual release notes
+│  │  └─ v1.2.0.md             Current bilingual release notes
 │  └─ workflows/
 │     └─ release.yml           Windows validation, build and release automation
 ├─ .gitignore                   Generated/runtime file exclusions
@@ -108,6 +120,7 @@ DeepSeek-Harness-Manager/
 ├─ core/
 │  ├─ service.js               Harness process, deployment, Git, API and plugin services
 │  ├─ service.test.js          End-to-end core tests with temporary repositories/services
+│  ├─ migration.js             Credential-free export/import, archive validation and integrity checks
 │  ├─ security.js              URL, IPC payload, config and secret-redaction policy
 │  ├─ stats.js                 Session aggregation and cost estimation
 │  └─ stats-worker.js          Background statistics worker
@@ -136,8 +149,8 @@ Generated locally, but excluded from Git:
 
 ```text
 dist/
-├─ DSH-Manager-1.1.0-portable.exe
-├─ DSH-Manager-1.1.0-windows-x64.zip
+├─ DSH-Manager-1.2.0-portable.exe
+├─ DSH-Manager-1.2.0-windows-x64.zip
 └─ win-unpacked/               Temporary/full build directory
 ```
 
@@ -160,7 +173,7 @@ pnpm run icon            # Regenerate icon.png and icon.ico
 pnpm run security:audit  # Scan source, Git history and extracted release artifacts
 ```
 
-`pnpm test` covers security input policy, config/key isolation and log redaction in addition to existing-checkout binding and rejection, start/stop, external port detection, upstream update checks, fast-forward updates, deployment/redeployment, mirror fallback, API persistence, token statistics, plugins, and service-layer localization. Electron smoke tests additionally check navigation, themes, language switching, responsive layout, and renderer errors.
+`pnpm test` covers security input policy, config/key isolation, log redaction, credential-free migration, archive restoration, and safe cleanup scope in addition to existing-checkout binding and rejection, start/stop, external port detection, upstream update checks, fast-forward updates, deployment/redeployment, mirror fallback, API persistence, token statistics, plugins, and service-layer localization. Electron smoke tests additionally check navigation, themes, language switching, responsive layout, and renderer errors.
 
 ## Troubleshooting
 
@@ -175,6 +188,14 @@ The selected folder can still be started if it is a valid Harness source archive
 ### Harness does not start
 
 Run **Environment check** on the Overview page and inspect **Runtime Logs**. Confirm the selected directory is the Harness repository root and that Git, Node.js, and pnpm meet the requirements above.
+
+### Migration import says the destination is not empty
+
+Choose a parent folder that does not already contain non-empty `deepseek-harness` or `.dsh` children. The manager never merges an import into existing environment data because that could overwrite credentials, sessions, or source changes.
+
+### Clean removal leaves the application EXE or folder
+
+This is intentional. Both release formats are portable and register no Windows installer. The cleanup command removes selected per-user data after the app exits; then delete the downloaded portable EXE or the extracted application folder manually. The manager never recursively deletes its containing folder because it may also contain unrelated user files.
 
 ## License
 
